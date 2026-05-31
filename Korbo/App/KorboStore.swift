@@ -10,6 +10,15 @@ struct OpenFile: Identifiable, Equatable {
     var id: String { path }
 }
 
+/// A file/image staged in the composer, ready to send as an opencode `file`
+/// part. `dataURL` is a `data:<mime>;base64,<…>` string.
+struct ComposerAttachment: Identifiable, Equatable {
+    let id = UUID()
+    let filename: String
+    let mime: String
+    let dataURL: String
+}
+
 enum ConnectionStatus: Equatable {
     case disconnected
     case connecting
@@ -628,12 +637,23 @@ final class KorboStore: ObservableObject {
     /// We mark the session active immediately for instant UI feedback and do one
     /// REST reload so the user's message renders with its real ID; from there the
     /// event stream drives everything until `session.idle`.
-    func sendPrompt(_ text: String) async {
+    func sendPrompt(_ text: String, attachments: [ComposerAttachment] = []) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let client, let sid = selectedSessionID, !trimmed.isEmpty else { return }
-        var body: [String: Any] = [
-            "parts": [["type": "text", "text": trimmed]]
-        ]
+        guard let client, let sid = selectedSessionID else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+        var parts: [[String: Any]] = []
+        if !trimmed.isEmpty {
+            parts.append(["type": "text", "text": trimmed])
+        }
+        for attachment in attachments {
+            parts.append([
+                "type": "file",
+                "mime": attachment.mime,
+                "filename": attachment.filename,
+                "url": attachment.dataURL
+            ])
+        }
+        var body: [String: Any] = ["parts": parts]
         if let model = resolveModel() {
             body["model"] = ["providerID": model.providerID, "modelID": model.modelID]
         }

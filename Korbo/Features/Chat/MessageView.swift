@@ -26,9 +26,7 @@ struct MessageView: View {
                         .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panelRaised))
                 }
                 ForEach(fileParts) { part in
-                    Label(part.filename ?? "attachment", systemImage: "paperclip")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textSecondary)
+                    AttachmentView(part: part)
                 }
             }
         }
@@ -68,12 +66,11 @@ struct MessageView: View {
     private func partView(_ part: OCPart) -> some View {
         switch part.type {
         case .text where part.isVisibleText:
-            Text(part.text ?? "")
-                .font(.system(size: 14))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            MarkdownView(text: part.text ?? "")
         case .reasoning where !(part.text ?? "").isEmpty:
             ReasoningView(text: part.text ?? "")
+        case .file:
+            AttachmentView(part: part)
         case .tool:
             ToolPartView(part: part)
         default:
@@ -199,5 +196,73 @@ private struct ToolPartView: View {
         case .pending, .unknown:
             Image(systemName: "circle.dashed").foregroundStyle(Theme.textTertiary)
         }
+    }
+}
+
+/// Renders a file part inline: images as a bounded thumbnail, other files as a
+/// labelled chip. Supports both `data:` URLs (user-attached, base64) and
+/// `http(s)://` URLs (server-served).
+struct AttachmentView: View {
+    let part: OCPart
+
+    private var isImage: Bool { (part.mime ?? "").hasPrefix("image/") }
+
+    var body: some View {
+        if isImage, let image = decodedImage {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 320, maxHeight: 240, alignment: .leading)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
+        } else if isImage, let url = remoteURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case let .success(image):
+                    image.resizable().scaledToFit()
+                        .frame(maxWidth: 320, maxHeight: 240, alignment: .leading)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
+                case .failure:
+                    chip
+                default:
+                    ProgressView().frame(width: 80, height: 60)
+                }
+            }
+        } else {
+            chip
+        }
+    }
+
+    private var chip: some View {
+        Label(part.filename ?? "attachment", systemImage: icon)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+    }
+
+    private var icon: String {
+        if isImage { return "photo" }
+        let mime = part.mime ?? ""
+        if mime.contains("pdf") { return "doc.richtext" }
+        if mime.hasPrefix("text/") { return "doc.text" }
+        return "paperclip"
+    }
+
+    /// Decode a `data:…;base64,…` URL into a UIImage.
+    private var decodedImage: UIImage? {
+        guard let urlString = part.url, urlString.hasPrefix("data:"),
+              let comma = urlString.firstIndex(of: ","),
+              urlString[..<comma].contains("base64") else { return nil }
+        let b64 = String(urlString[urlString.index(after: comma)...])
+        guard let data = Data(base64Encoded: b64) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private var remoteURL: URL? {
+        guard let s = part.url, s.hasPrefix("http") else { return nil }
+        return URL(string: s)
     }
 }

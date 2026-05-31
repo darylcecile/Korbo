@@ -50,9 +50,9 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 Message list, user vs assistant distinction
 - [ ] P0 Message header: sender/model logo, model badge, agent badge
 - [ ] P1 Reasoning‑effort/variant badge
-- [ ] P0 **Text part**: markdown rendering
-- [ ] P0 Code blocks: syntax highlighting + copy button
-- [ ] P0 Markdown: lists, tables, blockquotes, links, emphasis, inline code
+- [x] P0 **Text part**: markdown rendering
+- [x] P0 Code blocks: syntax highlighting + copy button
+- [x] P0 Markdown: lists, tables, blockquotes, links, emphasis, inline code
 - [ ] P0 **Reasoning part**: collapsible "thinking" block (streamed)
 - [ ] P0 **Tool part**: generic tool call card (name, status, expand)
 - [ ] P0 Tool: bash/shell command + output (collapsible)
@@ -61,7 +61,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Tool: task (subagent) nested rendering
 - [ ] P1 Tool: full‑output modal/expand
 - [ ] P0 **Todo** list rendering (todowrite/`todo.updated`)
-- [ ] P0 **File/image attachments** inline (user + assistant)
+- [x] P0 **File/image attachments** inline (user + assistant)
 - [ ] P1 Step / snapshot / patch / compaction parts
 - [ ] P0 Per‑message footer: tokens, cost, duration, timestamp
 - [ ] P0 Message actions: copy
@@ -73,7 +73,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 Empty state
 - [ ] P0 Error state (+ retry)
 - [ ] P1 Pending‑changes bar (unstaged git)
-- [ ] P1 Auto‑scroll w/ "scroll to bottom" affordance
+- [x] P1 Auto‑scroll w/ "scroll to bottom" affordance
 - [ ] P2 Inline code comments / drafts
 
 ## 4. Composer
@@ -84,10 +84,10 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 `@` mention autocomplete: agents
 - [ ] P1 `/` command/skill autocomplete
 - [ ] P1 `!` shell prefix routing
-- [ ] P0 Attach file (document picker)
-- [ ] P0 Attach image (photo picker) + preview
+- [x] P0 Attach file (document picker)
+- [x] P0 Attach image (photo picker) + preview
 - [ ] P1 Paste image; drag‑drop files
-- [ ] P1 Attachment chips (remove, size/path)
+- [x] P1 Attachment chips (remove, size/path)
 - [ ] P0 Model selector
 - [ ] P1 Reasoning‑effort selector
 - [ ] P0 Agent/mode selector (Build/Plan/…)

@@ -188,6 +188,32 @@ enum SyntaxHighlighter {
         }
     }
 
+    /// Map a markdown code-fence info string (e.g. ```` ```swift ````, `python`,
+    /// `sh`) to a `Language`. Falls back to extension-based detection so a tag
+    /// like `swift` reuses the same grammar as a `.swift` file.
+    static func language(forFenceTag tag: String) -> Language? {
+        let t = tag.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !t.isEmpty else { return nil }
+        let ext: String
+        switch t {
+        case "javascript", "node": ext = "js"
+        case "typescript": ext = "ts"
+        case "python", "python3": ext = "py"
+        case "ruby": ext = "rb"
+        case "shell", "console", "terminal": ext = "sh"
+        case "golang": ext = "go"
+        case "rust": ext = "rs"
+        case "objective-c", "objc": ext = "m"
+        case "c++": ext = "cpp"
+        case "c#", "csharp": ext = "cs"
+        case "kotlin": ext = "kt"
+        case "yaml": ext = "yml"
+        case "html", "xml", "markdown", "md", "text", "txt", "plaintext": return nil
+        default: ext = t
+        }
+        return language(forPath: "x.\(ext)")
+    }
+
     // MARK: Language definitions
 
     private static func cFamily(keywords: Set<String>) -> Language {

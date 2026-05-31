@@ -1,9 +1,15 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct ChatPane: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
     @State private var draft: String = ""
+    @State private var attachments: [ComposerAttachment] = []
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var showFileImporter = false
+    @State private var isPinnedToBottom = true
 
     private var session: OCSession? { store.selectedSession }
 
@@ -146,30 +152,71 @@ struct ChatPane: View {
                          title: "No messages yet",
                          subtitle: "Send a prompt to get started.")
         } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        ForEach(store.messages) { item in
-                            MessageView(item: item)
-                                .id(item.id)
-                        }
-                        ForEach(sessionPermissions) { permission in
-                            PermissionCard(permission: permission) { response in
-                                Task { await store.replyPermission(permission, response: response) }
+            GeometryReader { outer in
+                ScrollViewReader { proxy in
+                    ZStack(alignment: .bottomTrailing) {
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                LazyVStack(alignment: .leading, spacing: 20) {
+                                    ForEach(store.messages) { item in
+                                        MessageView(item: item)
+                                            .id(item.id)
+                                    }
+                                    ForEach(sessionPermissions) { permission in
+                                        PermissionCard(permission: permission) { response in
+                                            Task { await store.replyPermission(permission, response: response) }
+                                        }
+                                    }
+                                    if store.isGenerating {
+                                        TypingIndicator().id("typing")
+                                    }
+                                }
+                                // Kept OUTSIDE the LazyVStack so it stays
+                                // instantiated when scrolled away from the bottom;
+                                // a lazy sentinel would de-render and freeze its
+                                // reported offset, hiding the scroll-to-bottom button.
+                                Color.clear.frame(height: 1).id("bottom")
+                                    .background(GeometryReader { g in
+                                        Color.clear.preference(
+                                            key: BottomOffsetKey.self,
+                                            value: g.frame(in: .named("chatScroll")).maxY)
+                                    })
                             }
+                            .frame(maxWidth: 760)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 24)
                         }
-                        if store.isGenerating {
-                            TypingIndicator().id("typing")
+                        .coordinateSpace(name: "chatScroll")
+                        .onPreferenceChange(BottomOffsetKey.self) { maxY in
+                            // Pinned when the bottom sentinel sits within the
+                            // visible viewport (plus a little slack).
+                            isPinnedToBottom = maxY <= outer.size.height + 80
                         }
-                        Color.clear.frame(height: 1).id("bottom")
+                        .onChange(of: streamSignature) { _, _ in
+                            guard isPinnedToBottom else { return }
+                            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+
+                        if !isPinnedToBottom {
+                            Button {
+                                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                            } label: {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .padding(12)
+                                    .background(Circle().fill(Theme.panelRaised))
+                                    .overlay(Circle().stroke(Theme.border, lineWidth: 1))
+                                    .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 20)
+                            .padding(.bottom, 16)
+                            .transition(.opacity.combined(with: .scale))
+                            .accessibilityLabel("Scroll to bottom")
+                        }
                     }
-                    .frame(maxWidth: 760)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 24)
-                }
-                .onChange(of: streamSignature) { _, _ in
-                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
         }
@@ -204,14 +251,24 @@ struct ChatPane: View {
         VStack(spacing: 0) {
             Divider().overlay(Theme.border)
             VStack(alignment: .leading, spacing: 10) {
+                if !attachments.isEmpty {
+                    attachmentStrip
+                }
                 TextField("@ for files/agents;  / for commands;  ! for shell", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...6)
                     .disabled(!canSend)
                 HStack(spacing: 14) {
-                    Image(systemName: "plus.circle")
-                    Image(systemName: "paperclip")
+                    PhotosPicker(selection: $photoItems, maxSelectionCount: 4, matching: .images) {
+                        Image(systemName: "photo")
+                    }
+                    .disabled(!canSend)
+                    Button { showFileImporter = true } label: {
+                        Image(systemName: "paperclip")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
                     Spacer()
                     Text(store.effectiveModelLabel).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     if store.isGenerating {
@@ -222,10 +279,10 @@ struct ChatPane: View {
                     } else {
                         Button { send() } label: {
                             Image(systemName: "paperplane.fill")
-                                .foregroundStyle(canSend && !draft.isEmpty ? Theme.accent : Theme.textTertiary)
+                                .foregroundStyle(canSubmit ? Theme.accent : Theme.textTertiary)
                         }
                         .buttonStyle(.plain)
-                        .disabled(!canSend || draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(!canSubmit)
                     }
                 }
                 .font(.system(size: 13))
@@ -236,17 +293,130 @@ struct ChatPane: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .padding(16)
         }
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            Task { await loadPhotos(items) }
+        }
+        .fileImporter(isPresented: $showFileImporter,
+                      allowedContentTypes: [.item],
+                      allowsMultipleSelection: true) { result in
+            if case let .success(urls) = result { loadFiles(urls) }
+        }
+    }
+
+    private var attachmentStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(attachments) { attachment in
+                    AttachmentChip(attachment: attachment) {
+                        attachments.removeAll { $0.id == attachment.id }
+                    }
+                }
+            }
+        }
     }
 
     private var canSend: Bool {
         store.status.isConnected && store.selectedSessionID != nil
     }
 
+    private var canSubmit: Bool {
+        canSend && (!draft.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty)
+    }
+
     private func send() {
         let text = draft
-        guard canSend, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let toSend = attachments
+        guard canSubmit else { return }
         draft = ""
-        Task { await store.sendPrompt(text) }
+        attachments = []
+        Task { await store.sendPrompt(text, attachments: toSend) }
+    }
+
+    // MARK: Attachment loading
+
+    @MainActor
+    private func loadPhotos(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            // Re-encode to a known mime so the server always gets a valid image.
+            let (bytes, mime, ext): (Data, String, String)
+            if let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) {
+                (bytes, mime, ext) = (jpeg, "image/jpeg", "jpg")
+            } else {
+                (bytes, mime, ext) = (data, "image/png", "png")
+            }
+            let name = "image-\(attachments.count + 1).\(ext)"
+            attachments.append(ComposerAttachment(
+                filename: name, mime: mime,
+                dataURL: "data:\(mime);base64,\(bytes.base64EncodedString())"))
+        }
+        photoItems = []
+    }
+
+    private func loadFiles(_ urls: [URL]) {
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            attachments.append(ComposerAttachment(
+                filename: url.lastPathComponent, mime: mime,
+                dataURL: "data:\(mime);base64,\(data.base64EncodedString())"))
+        }
+    }
+}
+
+/// A removable chip for a staged composer attachment (image thumbnail or file icon).
+private struct AttachmentChip: View {
+    let attachment: ComposerAttachment
+    let onRemove: () -> Void
+
+    private var thumbnail: UIImage? {
+        guard attachment.mime.hasPrefix("image/"),
+              let comma = attachment.dataURL.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(attachment.dataURL[attachment.dataURL.index(after: comma)...]))
+        else { return nil }
+        return UIImage(data: data)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable().scaledToFill()
+                    .frame(width: 28, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Image(systemName: "doc")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 28, height: 28)
+            }
+            Text(attachment.filename)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+    }
+}
+
+/// Preference key reporting the bottom sentinel's position so the chat can tell
+/// whether the user is scrolled to the bottom.
+private struct BottomOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
