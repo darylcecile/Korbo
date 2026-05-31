@@ -1,105 +1,108 @@
 import SwiftUI
 
+/// Right-hand context panel: git · files · context. M1 wires the **context** tab
+/// to live session token/cost data; git and files arrive in later milestones
+/// (M3 / M5) and show honest "coming soon" states until then.
 struct ContextPane: View {
     @EnvironmentObject private var app: AppModel
+    @EnvironmentObject private var store: KorboStore
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab strip
-            HStack(spacing: 0) {
-                ForEach(AppModel.RightTab.allCases) { tab in
-                    Button { app.rightTab = tab } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: tab.systemImage).font(.system(size: 12))
-                            Text(tab.title).font(.system(size: 13, weight: .medium))
-                        }
-                        .foregroundStyle(app.rightTab == tab ? Theme.textPrimary : Theme.textTertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+            tabStrip
             Divider().overlay(Theme.border)
 
             switch app.rightTab {
-            case .git: gitTab
-            case .files: placeholder("Files tree, editor & manual-save toggle")
-            case .context: placeholder("Context items & token usage breakdown")
+            case .git:
+                comingSoon(icon: "arrow.triangle.branch",
+                           title: "Git workflow",
+                           detail: "Branch, changes, commit, PR and sync — coming in a later milestone.")
+            case .files:
+                comingSoon(icon: "folder",
+                           title: "File explorer",
+                           detail: "Browse and edit the workspace with a manual-save toggle — coming soon.")
+            case .context:
+                contextTab
             }
             Spacer(minLength: 0)
         }
         .background(Theme.panel)
     }
 
-    private var gitTab: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 12))
-                    Text("main").font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Image(systemName: "clock.arrow.circlepath")
-                    Image(systemName: "house")
+    private var tabStrip: some View {
+        HStack(spacing: 0) {
+            ForEach(AppModel.RightTab.allCases) { tab in
+                Button { app.rightTab = tab } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: tab.systemImage).font(.system(size: 12))
+                        Text(tab.title).font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(app.rightTab == tab ? Theme.textPrimary : Theme.textTertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
                 }
-                .foregroundStyle(Theme.textSecondary)
+                .buttonStyle(.plain)
+            }
+        }
+    }
 
-                HStack(spacing: 8) {
-                    pill("commit", filled: true)
-                    pill("update")
-                    pill("pr")
-                    Spacer()
-                    pill("sync")
-                }
+    // MARK: Context tab (live)
 
-                HStack {
-                    Text("Changes").font(.system(size: 14, weight: .semibold))
-                    Text("\(SampleData.changes.count)/\(SampleData.changes.count)")
-                        .font(.system(size: 12)).foregroundStyle(Theme.textTertiary)
-                    Spacer()
-                    Text("revert all").font(.system(size: 12)).foregroundStyle(Theme.removed)
-                }
-
-                VStack(spacing: 6) {
-                    ForEach(SampleData.changes) { change in
-                        changeRow(change)
+    @ViewBuilder
+    private var contextTab: some View {
+        if let session = store.selectedSession {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    metricRow("Cost", value: session.cost.map { String(format: "$%.4f", $0) } ?? "—")
+                    if let tokens = session.tokens {
+                        metricRow("Input tokens", value: formatted(tokens.input))
+                        metricRow("Output tokens", value: formatted(tokens.output))
+                        metricRow("Reasoning tokens", value: formatted(tokens.reasoning))
+                    }
+                    Divider().overlay(Theme.border)
+                    metricRow("Additions", value: "+\(session.additions)", color: Theme.added)
+                    metricRow("Deletions", value: "-\(session.deletions)", color: Theme.removed)
+                    if let project = session.projectName {
+                        metricRow("Project", value: project)
+                    }
+                    if let model = session.model?.modelID {
+                        metricRow("Model", value: model)
                     }
                 }
+                .padding(16)
             }
-            .padding(16)
+        } else {
+            comingSoon(icon: "doc.text.magnifyingglass",
+                       title: "No session selected",
+                       detail: "Select a session to see its token usage and cost.")
         }
     }
 
-    private func changeRow(_ c: SampleData.ChangeRow) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.square.fill").foregroundStyle(Theme.accent).font(.system(size: 13))
-            Text(c.status).font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.textSecondary).frame(width: 12)
-            Text((c.path as NSString).lastPathComponent)
-                .font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-            Spacer(minLength: 6)
-            Text("+\(c.added)").font(.system(size: 11)).foregroundStyle(Theme.added)
-            Text("-\(c.removed)").font(.system(size: 11)).foregroundStyle(Theme.removed)
-        }
-        .foregroundStyle(Theme.textPrimary)
-    }
-
-    private func pill(_ text: String, filled: Bool = false) -> some View {
-        Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .padding(.horizontal, 11).padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(filled ? Theme.panelRaised : .clear))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: filled ? 0 : 1))
-            .foregroundStyle(Theme.textSecondary)
-    }
-
-    private func placeholder(_ text: String) -> some View {
-        VStack {
+    private func metricRow(_ label: String, value: String, color: Color = Theme.textPrimary) -> some View {
+        HStack {
+            Text(label).font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
             Spacer()
-            Image(systemName: "hammer").font(.system(size: 28)).foregroundStyle(Theme.textTertiary)
-            Text(text).font(.system(size: 13)).foregroundStyle(Theme.textTertiary)
-                .multilineTextAlignment(.center).padding(.top, 8)
+            Text(value).font(.system(size: 13, weight: .medium)).foregroundStyle(color)
+        }
+    }
+
+    private func formatted(_ value: Double?) -> String {
+        guard let value, value > 0 else { return "0" }
+        return NumberFormatter.localizedString(from: NSNumber(value: Int(value)), number: .decimal)
+    }
+
+    private func comingSoon(icon: String, title: String, detail: String) -> some View {
+        VStack(spacing: 10) {
+            Spacer()
+            Image(systemName: icon).font(.system(size: 30)).foregroundStyle(Theme.textTertiary)
+            Text(title).font(.system(size: 14, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
             Spacer()
         }
-        .frame(maxWidth: .infinity).padding(24)
+        .frame(maxWidth: .infinity)
+        .padding(24)
     }
 }

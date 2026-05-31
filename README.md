@@ -41,7 +41,7 @@ then regenerate.
 ### Layout
 ```
 Korbo/
-  App/        KorboApp, Theme, AppModel, SampleData
+  App/        KorboApp, AppModel, KorboStore, RelativeTime
   Features/   Root, Sessions, Chat, Context (SwiftUI views)
   Networking/ OpencodeClient, OpencodeModels, OpencodeEvents
   Resources/  Assets.xcassets

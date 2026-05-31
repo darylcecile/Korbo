@@ -6,7 +6,7 @@ import SwiftUI
 final class AppModel: ObservableObject {
     @Published var showRightSidebar = true
     @Published var rightTab: RightTab = .git
-    @Published var selectedSessionID: String? = SampleData.sessions.first?.id
+    @Published var showConnectionSheet = false
 
     enum RightTab: String, CaseIterable, Identifiable {
         case git, files, context
