@@ -226,6 +226,7 @@ struct OCAgent: Codable, Identifiable, Hashable {
     let name: String
     var description: String?
     var mode: String?
+    var hidden: Bool?
 }
 
 struct OCCommand: Codable, Identifiable, Hashable {

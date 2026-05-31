@@ -7,6 +7,7 @@ final class AppModel: ObservableObject {
     @Published var showRightSidebar = true
     @Published var rightTab: RightTab = .git
     @Published var showConnectionSheet = false
+    @Published var showSettingsSheet = false
 
     enum RightTab: String, CaseIterable, Identifiable {
         case git, files, context

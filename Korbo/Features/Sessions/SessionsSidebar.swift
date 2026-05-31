@@ -289,7 +289,7 @@ struct SessionsSidebar: View {
     private var footer: some View {
         HStack(spacing: 18) {
             Button {
-                app.showConnectionSheet = true
+                app.showSettingsSheet = true
             } label: {
                 HStack(spacing: 6) {
                     Circle().fill(statusColor).frame(width: 8, height: 8)

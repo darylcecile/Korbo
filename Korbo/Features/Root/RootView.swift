@@ -30,6 +30,11 @@ struct RootView: View {
             ConnectionSheet()
                 .environmentObject(store)
         }
+        .sheet(isPresented: $app.showSettingsSheet) {
+            SettingsView()
+                .environmentObject(app)
+                .environmentObject(store)
+        }
     }
 }
 

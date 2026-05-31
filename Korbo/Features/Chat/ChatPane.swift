@@ -20,15 +20,9 @@ struct ChatPane: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles").font(.system(size: 12))
-                Text(modelLabel).font(.system(size: 13)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
-            }
-            .foregroundStyle(Theme.textSecondary)
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panelRaised))
+        HStack(alignment: .center, spacing: 10) {
+            modelMenu
+            agentMenu
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(session?.title ?? "New session")
@@ -57,8 +51,79 @@ struct ChatPane: View {
         .padding(.horizontal, 18).padding(.vertical, 12)
     }
 
-    private var modelLabel: String {
-        session?.model?.modelID ?? store.resolveModel()?.modelID ?? "Auto-discover"
+    // MARK: Model & agent pickers
+
+    private var modelMenu: some View {
+        Menu {
+            Button {
+                store.selectModel(nil)
+            } label: {
+                Label("Auto", systemImage: store.selectedModelOverride == nil ? "checkmark" : "sparkles")
+            }
+            ForEach(store.connectedProviders) { provider in
+                Section(provider.name ?? provider.id) {
+                    ForEach(models(of: provider), id: \.id) { model in
+                        Button {
+                            store.selectModel(OCModelRef(providerID: provider.id, modelID: model.id))
+                        } label: {
+                            if isActiveModel(provider.id, model.id) {
+                                Label(model.name ?? model.id, systemImage: "checkmark")
+                            } else {
+                                Text(model.name ?? model.id)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            chip(icon: "sparkles", text: store.effectiveModelLabel)
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(!store.status.isConnected || store.connectedProviders.isEmpty)
+    }
+
+    @ViewBuilder
+    private var agentMenu: some View {
+        if !store.selectableAgents.isEmpty {
+            Menu {
+                ForEach(store.selectableAgents) { agent in
+                    Button {
+                        store.selectAgent(agent.name)
+                    } label: {
+                        if store.resolveAgent() == agent.name {
+                            Label(agent.name, systemImage: "checkmark")
+                        } else {
+                            Text(agent.name)
+                        }
+                    }
+                }
+            } label: {
+                chip(icon: "person.fill", text: store.resolveAgent() ?? "Agent")
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(!store.status.isConnected)
+        }
+    }
+
+    private func chip(icon: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 12))
+            Text(text).font(.system(size: 13)).lineLimit(1)
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+        }
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panelRaised))
+    }
+
+    private func models(of provider: OCProvider) -> [OCModel] {
+        (provider.models ?? [:]).values
+            .sorted { ($0.name ?? $0.id).localizedCaseInsensitiveCompare($1.name ?? $1.id) == .orderedAscending }
+    }
+
+    private func isActiveModel(_ providerID: String, _ modelID: String) -> Bool {
+        guard let ref = store.resolveModel() else { return false }
+        return ref.providerID == providerID && ref.modelID == modelID
     }
 
     // MARK: Messages
@@ -148,7 +213,7 @@ struct ChatPane: View {
                     Image(systemName: "plus.circle")
                     Image(systemName: "paperclip")
                     Spacer()
-                    Text(modelLabel).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    Text(store.effectiveModelLabel).foregroundStyle(Theme.textSecondary).lineLimit(1)
                     if store.isGenerating {
                         Button { Task { await store.abort() } } label: {
                             Image(systemName: "stop.fill").foregroundStyle(Theme.removed)

@@ -146,17 +146,17 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P2 Context modes/tabs (diff/file/context/plan/preview/browser)
 - [ ] P2 Plan editor; project notes & todo panel
 
-## 8. Settings
-- [ ] P0 **Connection / Remote instances**: add/edit/remove server, auth, verify, switch
-- [ ] P0 Providers & API keys (add/verify/remove, masked)
-- [ ] P1 Provider OAuth flows
-- [ ] P0 Default model / default agent
-- [ ] P1 Models: favourites + cycling
-- [ ] P1 Agents: list/create/edit/delete (model, prompt, tools, effort)
-- [ ] P1 Commands: custom slash commands
-- [ ] P1 Skills: list/install/uninstall (catalog + from repo)
-- [ ] P1 MCP servers: add/connect/disconnect/remove (+ OAuth)
-- [ ] P2 Plugins: install/enable/disable/uninstall
+## 8. Settings — M6 delivered (SettingsView + ChatPane pickers)
+- [x] P0 **Connection / Remote instances**: add/edit/remove server, auth, verify, switch — Connection section + "Change server…" → ConnectionSheet (multi-server, keychain)
+- [x] P0 Providers & API keys (add/verify/remove, masked) — connected-first list + "All providers (N)" disclosure; ⋯ menu → Add/Replace key (SecureField) `PUT /auth/{id}` + Remove `DELETE /auth/{id}`. NOTE: opencode's `connected` reflects genuinely usable providers, so a bogus key won't flip the badge (verified at API-contract level).
+- [ ] P1 Provider OAuth flows — deferred (needs `POST /provider/{id}/oauth/authorize|callback` device-flow UI)
+- [x] P0 Default model / default agent — ChatPane header `modelMenu` (Auto + per-connected-provider model sections, checkmarks) + `agentMenu` (build/plan, hidden+subagent filtered); persisted to UserDefaults; sent per-prompt as `model`/`agent`
+- [ ] P1 Models: favourites + cycling — deferred (not API-backed)
+- [ ] P1 Agents: list/create/edit/delete (model, prompt, tools, effort) — read-only catalogue delivered (name + primary/subagent badge + description); create/edit/delete deferred (opencode configures agents via config file, no REST CRUD)
+- [ ] P1 Commands: custom slash commands — read-only catalogue delivered (`/name` + description via `GET /command`); CRUD deferred (config-file only)
+- [ ] P1 Skills: list/install/uninstall (catalog + from repo) — deferred (no REST API)
+- [ ] P1 MCP servers: add/connect/disconnect/remove (+ OAuth) — deferred (config-file only)
+- [ ] P2 Plugins: install/enable/disable/uninstall — deferred (config-file only)
 - [ ] P1 Appearance: theme (light/dark/system)
 - [ ] P1 Appearance: syntax theme + custom themes (import/export)
 - [ ] P1 Appearance: fonts (UI/mono), size, density, radius

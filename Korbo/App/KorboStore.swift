@@ -64,6 +64,14 @@ final class KorboStore: ObservableObject {
     @Published private(set) var fileSearchResults: [String] = []
     @Published private(set) var isSearchingFiles = false
 
+    /// User-chosen model/agent overrides for new prompts. `nil` means "let the
+    /// store auto-resolve" (see `resolveModel`/`resolveAgent`). Persisted globally
+    /// across launches via `UserDefaults`.
+    @Published private(set) var selectedModelOverride: OCModelRef?
+    @Published private(set) var selectedAgentName: String?
+    /// Set while a provider API-key write/removal is in flight (drives Settings UI).
+    @Published private(set) var isUpdatingAuth = false
+
     /// The two diff views opencode exposes through `/vcs/diff`.
     enum GitMode: String, CaseIterable, Identifiable {
         case working, branch
@@ -85,6 +93,7 @@ final class KorboStore: ObservableObject {
 
     init(servers: ServerStore? = nil) {
         self.servers = servers ?? ServerStore()
+        loadModelAgentPreferences()
     }
 
     var selectedSession: OCSession? {
@@ -177,6 +186,119 @@ final class KorboStore: ObservableObject {
         providers = p
         agents = a ?? []
         commands = c ?? []
+    }
+
+    /// Re-fetch providers (and their connected/auth state) after an auth change.
+    func reloadProviders() async {
+        guard let client else { return }
+        if let p = try? await client.listProviders() { providers = p }
+    }
+
+    // MARK: - Model & agent selection
+
+    private static let modelDefaultsKey = "korbo.selectedModel"
+    private static let agentDefaultsKey = "korbo.selectedAgent"
+
+    private func loadModelAgentPreferences() {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: Self.modelDefaultsKey),
+           let ref = try? JSONDecoder().decode(OCModelRef.self, from: data) {
+            selectedModelOverride = ref
+        }
+        selectedAgentName = defaults.string(forKey: Self.agentDefaultsKey)
+    }
+
+    /// Choose the model for new prompts. Pass `nil` to fall back to auto-resolution.
+    func selectModel(_ ref: OCModelRef?) {
+        selectedModelOverride = ref
+        let defaults = UserDefaults.standard
+        if let ref, let data = try? JSONEncoder().encode(ref) {
+            defaults.set(data, forKey: Self.modelDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: Self.modelDefaultsKey)
+        }
+    }
+
+    /// Choose the agent for new prompts. Pass `nil` to use the server default.
+    func selectAgent(_ name: String?) {
+        selectedAgentName = name
+        let defaults = UserDefaults.standard
+        if let name { defaults.set(name, forKey: Self.agentDefaultsKey) }
+        else { defaults.removeObject(forKey: Self.agentDefaultsKey) }
+    }
+
+    /// Agents the user can pick as the primary driver of a conversation:
+    /// `primary`/`all` modes only (subagents are invoked by the model, not chosen
+    /// here), and not `hidden` (opencode marks internal agents like
+    /// compaction/summary/title as hidden).
+    var selectableAgents: [OCAgent] {
+        agents.filter { ($0.mode ?? "all") != "subagent" && !($0.hidden ?? false) }
+    }
+
+    /// Connected providers (those the server can actually reach) in a stable,
+    /// preference-ordered list for the model picker.
+    var connectedProviders: [OCProvider] {
+        guard let providers else { return [] }
+        let preferred = ["github-copilot", "anthropic", "openai", "opencode"]
+        let order = preferred.filter { providers.connected.contains($0) }
+            + providers.connected.filter { !preferred.contains($0) }
+        return order.compactMap { id in providers.all.first { $0.id == id } }
+    }
+
+    /// Human-friendly label for a model reference (its display name if known).
+    func modelDisplayName(_ ref: OCModelRef) -> String {
+        providers?.all.first { $0.id == ref.providerID }?
+            .models?[ref.modelID]?.name ?? ref.modelID
+    }
+
+    /// Short label for the currently effective model (override → session → auto).
+    var effectiveModelLabel: String {
+        if let ref = resolveModel() { return modelDisplayName(ref) }
+        return "Auto"
+    }
+
+    /// The agent name to send with a prompt: the explicit override if still valid,
+    /// else the first selectable agent the server reports.
+    func resolveAgent() -> String? {
+        if let name = selectedAgentName,
+           selectableAgents.contains(where: { $0.name == name }) {
+            return name
+        }
+        return selectableAgents.first?.name
+    }
+
+    // MARK: - Provider auth
+
+    /// `PUT /auth/{id}` — store an API key for a provider, then refresh provider
+    /// state so the new connection shows up. Returns whether it succeeded.
+    @discardableResult
+    func addProviderKey(_ providerID: String, key: String) async -> Bool {
+        guard let client else { return false }
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        isUpdatingAuth = true
+        defer { isUpdatingAuth = false }
+        do {
+            let ok = try await client.setProviderAPIKey(providerID, key: trimmed)
+            await reloadProviders()
+            return ok
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
+    /// `DELETE /auth/{id}` — remove a provider's stored credentials, then refresh.
+    func removeProviderKey(_ providerID: String) async {
+        guard let client else { return }
+        isUpdatingAuth = true
+        defer { isUpdatingAuth = false }
+        do {
+            _ = try await client.removeProviderAuth(providerID)
+            await reloadProviders()
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
     }
 
     func selectSession(_ id: String) async {
@@ -407,6 +529,9 @@ final class KorboStore: ObservableObject {
         if let model = resolveModel() {
             body["model"] = ["providerID": model.providerID, "modelID": model.modelID]
         }
+        if let agent = resolveAgent() {
+            body["agent"] = agent
+        }
         activeSessionIDs.insert(sid)
         do {
             let data = try JSONSerialization.data(withJSONObject: body)
@@ -444,14 +569,13 @@ final class KorboStore: ObservableObject {
         }
     }
 
-    /// Best-effort model selection: the session's last-used model, else the first
-    /// connected provider's first model.
     /// Best-effort model selection for a new prompt:
-    /// 1. the session's last-used model, if any;
-    /// 2. otherwise a connected provider (preferring github-copilot, then other
+    /// 1. the user's explicit picker override, if set;
+    /// 2. the session's last-used model, if any;
+    /// 3. otherwise a connected provider (preferring github-copilot, then other
     ///    common hosts) paired with the opencode-recommended default model.
-    /// A full in-app model picker arrives in a later milestone.
     func resolveModel() -> OCModelRef? {
+        if let override = selectedModelOverride { return override }
         if let m = selectedSession?.model { return m }
         guard let providers else { return nil }
 

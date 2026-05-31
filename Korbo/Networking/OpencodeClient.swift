@@ -85,6 +85,24 @@ actor OpencodeClient {
         try await getJSON("/command")
     }
 
+    // MARK: - Provider auth
+
+    /// `PUT /auth/{providerID}` with `{ type: "api", key }` — store an API key for
+    /// a provider so the server can connect to it. Returns whether it was accepted.
+    @discardableResult
+    func setProviderAPIKey(_ providerID: String, key: String) async throws -> Bool {
+        let body = try JSONSerialization.data(withJSONObject: ["type": "api", "key": key])
+        let (out, _) = try await raw(.put, "/auth/\(Self.queryEncode(providerID))", body: body)
+        return (try? decoder.decode(Bool.self, from: out)) ?? true
+    }
+
+    /// `DELETE /auth/{providerID}` — remove stored credentials for a provider.
+    @discardableResult
+    func removeProviderAuth(_ providerID: String) async throws -> Bool {
+        let (out, _) = try await raw(.delete, "/auth/\(Self.queryEncode(providerID))")
+        return (try? decoder.decode(Bool.self, from: out)) ?? true
+    }
+
     // MARK: - VCS / git
 
     /// `GET /vcs` — current branch + repository default branch.
