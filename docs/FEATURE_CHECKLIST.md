@@ -97,18 +97,25 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P2 Pencil scribble input
 
 ## 5. Git tab (right)
-- [ ] P0 Branch selector (list/switch/search)
-- [ ] P1 Create new branch
-- [ ] P0 Changes list: path, status (M/A/D/?), +/−
-- [ ] P0 Stage/unstage per file; select‑all
-- [ ] P0 Revert per file; revert all
-- [ ] P0 Inline diff viewer per file
-- [ ] P0 Commit message box
-- [ ] P0 **Generate** AI commit message
-- [ ] P0 Commit
-- [ ] P0 Commit & sync (push)
-- [ ] P1 Fetch / pull / push / sync actions
-- [ ] P1 History/log list (hash, author, time, message)
+> opencode's server exposes a **read + diff** VCS surface only (`/vcs`,
+> `/vcs/diff`, `/vcs/apply`). Mutations (commit / push / pull / branch
+> switch / stage) are **not** in its REST API — they need a server-side git
+> bridge (or the agent-shell endpoint, which pollutes the chat) and are
+> deferred. M3 delivers the diff-review surface below.
+- [x] P0 Branch + base header (current branch → default branch) — *display; switch deferred*
+- [ ] P1 Create new branch — *no API*
+- [x] P0 Changes list: path, status (M/A/D/?), +/−
+- [x] P0 Working‑vs‑branch diff toggle (`mode=git` / `mode=branch`)
+- [ ] P0 Stage/unstage per file; select‑all — *no git-index API*
+- [ ] P0 Revert per file; revert all — *possible via reverse `/vcs/apply`; deferred*
+- [x] P0 Inline diff viewer per file (hunks, add/remove/context coloring)
+- [x] P0 Live refresh on `session.diff` / `file.edited` / `vcs.branch.updated`
+- [ ] P0 Commit message box — *no commit API*
+- [ ] P0 **Generate** AI commit message — *no commit API*
+- [ ] P0 Commit — *no commit API*
+- [ ] P0 Commit & sync (push) — *no push API*
+- [ ] P1 Fetch / pull / push / sync actions — *no API*
+- [ ] P1 History/log list (hash, author, time, message) — *no log API*
 - [ ] P2 Git graph visualization
 - [ ] P1 Pull request: create (title/desc/base)
 - [ ] P1 Pull request: view status/reviews/CI

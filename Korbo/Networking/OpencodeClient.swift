@@ -85,6 +85,19 @@ actor OpencodeClient {
         try await getJSON("/command")
     }
 
+    // MARK: - VCS / git
+
+    /// `GET /vcs` — current branch + repository default branch.
+    func vcsInfo() async throws -> OCVcsInfo {
+        try await getJSON("/vcs")
+    }
+
+    /// `GET /vcs/diff?mode=git|branch` — per-file diffs (status, ±counts, patch).
+    /// `git` = uncommitted working-tree changes; `branch` = this branch vs its base.
+    func vcsDiff(mode: String) async throws -> [OCVcsFileDiff] {
+        try await getJSON("/vcs/diff?mode=\(mode)")
+    }
+
     // MARK: - Prompting
 
     /// `POST /session` — create a new session.

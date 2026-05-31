@@ -50,6 +50,7 @@ enum OCEventType: String {
     // workspace / vcs
     case fileEdited = "file.edited"
     case vcsBranchUpdated = "vcs.branch.updated"
+    case sessionDiff = "session.diff"
 
     // connectivity
     case serverConnected = "server.connected"

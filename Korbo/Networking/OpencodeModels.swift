@@ -264,3 +264,25 @@ struct OCFileChange: Codable, Identifiable, Hashable {
     var removed: Int?
     var status: OCFileStatus?
 }
+
+/// `GET /vcs` — current branch and the repository's default branch.
+struct OCVcsInfo: Codable, Hashable {
+    var branch: String?
+    var defaultBranch: String?
+
+    enum CodingKeys: String, CodingKey {
+        case branch
+        case defaultBranch = "default_branch"
+    }
+}
+
+/// A single changed file from `GET /vcs/diff` — carries the unified-diff
+/// `patch` plus line counts and status. Used by the Git panel's diff viewer.
+struct OCVcsFileDiff: Codable, Identifiable, Hashable {
+    var id: String { file }
+    let file: String
+    var patch: String?
+    var additions: Int
+    var deletions: Int
+    var status: OCFileStatus?
+}

@@ -42,6 +42,22 @@ final class KorboStore: ObservableObject {
     /// Tool permission requests awaiting a user decision (inline cards in chat).
     @Published private(set) var pendingPermissions: [OCPermission] = []
 
+    /// Git panel state: branch info + the changed files for the current diff mode.
+    @Published private(set) var vcsInfo: OCVcsInfo?
+    @Published private(set) var gitFiles: [OCVcsFileDiff] = []
+    @Published private(set) var isLoadingGit = false
+    /// Which diff the Git panel shows. Setting it reloads via `loadGit()`.
+    @Published var gitMode: GitMode = .working
+
+    /// The two diff views opencode exposes through `/vcs/diff`.
+    enum GitMode: String, CaseIterable, Identifiable {
+        case working, branch
+        var id: String { rawValue }
+        /// `/vcs/diff?mode=` query value.
+        var query: String { self == .working ? "git" : "branch" }
+        var title: String { self == .working ? "Working" : "Branch" }
+    }
+
     /// Whether the selected session is currently generating a reply.
     var isGenerating: Bool {
         guard let id = selectedSessionID else { return false }
@@ -84,6 +100,7 @@ final class KorboStore: ObservableObject {
             status = .connected
             await reloadSessions()
             await loadMetadata()
+            await loadGit()
             startEventStream()
         } catch {
             let message = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
@@ -102,6 +119,8 @@ final class KorboStore: ObservableObject {
         eventTask = nil
         activeSessionIDs.removeAll()
         pendingPermissions.removeAll()
+        vcsInfo = nil
+        gitFiles = []
     }
 
     // MARK: - Loading
@@ -138,6 +157,36 @@ final class KorboStore: ObservableObject {
     func selectSession(_ id: String) async {
         selectedSessionID = id
         await loadMessages(sessionID: id)
+    }
+
+    // MARK: - Git / VCS
+
+    /// Refresh the Git panel: branch info plus the changed files for the current
+    /// `gitMode`. Failures are surfaced via `lastError` but leave prior data intact
+    /// (a transient diff error shouldn't blank the panel).
+    func loadGit() async {
+        guard let client else { return }
+        isLoadingGit = true
+        defer { isLoadingGit = false }
+        let mode = gitMode
+        async let infoResult = try? client.vcsInfo()
+        async let filesResult = try? client.vcsDiff(mode: mode.query)
+        let info = await infoResult
+        let files = await filesResult
+        if let info { vcsInfo = info }
+        // Only replace the file list if the request succeeded and the mode is still
+        // current (the user may have toggled while the request was in flight).
+        if let files, mode == gitMode {
+            gitFiles = files
+        }
+    }
+
+    /// Switch diff mode and reload.
+    func setGitMode(_ mode: GitMode) async {
+        guard mode != gitMode else { return }
+        gitMode = mode
+        gitFiles = []
+        await loadGit()
     }
 
     /// `POST /session` then select the new session.
@@ -325,8 +374,11 @@ final class KorboStore: ObservableObject {
                     pendingPermissions.append(permission)
                 }
             }
-        case .sessionError, .questionAsked, .fileEdited, .vcsBranchUpdated, .serverConnected:
-            break // handled in later milestones (M3 git, etc.)
+        case .sessionError, .questionAsked, .serverConnected:
+            break // handled in later milestones
+        case .fileEdited, .vcsBranchUpdated, .sessionDiff:
+            // The working tree or branch changed — refresh the Git panel.
+            Task { [weak self] in await self?.loadGit() }
         }
     }
 

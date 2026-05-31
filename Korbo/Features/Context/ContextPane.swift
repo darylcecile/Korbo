@@ -14,9 +14,7 @@ struct ContextPane: View {
 
             switch app.rightTab {
             case .git:
-                comingSoon(icon: "arrow.triangle.branch",
-                           title: "Git workflow",
-                           detail: "Branch, changes, commit, PR and sync — coming in a later milestone.")
+                GitPane()
             case .files:
                 comingSoon(icon: "folder",
                            title: "File explorer",
