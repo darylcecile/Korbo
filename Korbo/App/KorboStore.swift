@@ -533,6 +533,15 @@ final class KorboStore: ObservableObject {
         }
     }
 
+    /// One-shot fuzzy file search for the command palette. Independent of the
+    /// Files-pane search state so the two don't interfere.
+    func paletteFileSearch(_ query: String, limit: Int = 25) async -> [String] {
+        guard let client else { return [] }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        return (try? await client.findFiles(query: q, limit: limit)) ?? []
+    }
+
     /// Directories first, then case-insensitive name order.
     private func sortNodes(_ nodes: [OCFileNode]) -> [OCFileNode] {
         nodes.sorted {

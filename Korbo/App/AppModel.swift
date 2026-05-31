@@ -9,6 +9,25 @@ final class AppModel: ObservableObject {
     @Published var showConnectionSheet = false
     @Published var showSettingsSheet = false
 
+    /// Command palette (⌘P / ⌘K) overlay.
+    @Published var showCommandPalette = false
+
+    /// The chat composer text, lifted here so the command palette (and future
+    /// `@`/`/`/`!` autocomplete) can prefill it. `ChatPane` binds its TextField
+    /// to this and clears it on send.
+    @Published var composerDraft: String = ""
+    /// Bumped to request keyboard focus on the composer; `ChatPane` observes it.
+    @Published var focusComposerToken = 0
+
+    func toggleCommandPalette() { showCommandPalette.toggle() }
+    func focusComposer() { focusComposerToken &+= 1 }
+
+    /// Reveal the right sidebar on a specific tab.
+    func showRightTab(_ tab: RightTab) {
+        rightTab = tab
+        showRightSidebar = true
+    }
+
     enum RightTab: String, CaseIterable, Identifiable {
         case git, files, terminal, context
         var id: String { rawValue }

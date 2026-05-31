@@ -5,11 +5,11 @@ import UniformTypeIdentifiers
 struct ChatPane: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
-    @State private var draft: String = ""
     @State private var attachments: [ComposerAttachment] = []
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showFileImporter = false
     @State private var isPinnedToBottom = true
+    @FocusState private var composerFocused: Bool
 
     private var session: OCSession? { store.selectedSession }
 
@@ -254,11 +254,12 @@ struct ChatPane: View {
                 if !attachments.isEmpty {
                     attachmentStrip
                 }
-                TextField("@ for files/agents;  / for commands;  ! for shell", text: $draft, axis: .vertical)
+                TextField("@ for files/agents;  / for commands;  ! for shell", text: $app.composerDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...6)
                     .disabled(!canSend)
+                    .focused($composerFocused)
                 HStack(spacing: 14) {
                     PhotosPicker(selection: $photoItems, maxSelectionCount: 4, matching: .images) {
                         Image(systemName: "photo")
@@ -283,6 +284,7 @@ struct ChatPane: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(!canSubmit)
+                        .keyboardShortcut(.return, modifiers: .command)
                     }
                 }
                 .font(.system(size: 13))
@@ -296,6 +298,9 @@ struct ChatPane: View {
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await loadPhotos(items) }
+        }
+        .onChange(of: app.focusComposerToken) { _, _ in
+            if canSend { composerFocused = true }
         }
         .fileImporter(isPresented: $showFileImporter,
                       allowedContentTypes: [.item],
@@ -321,14 +326,14 @@ struct ChatPane: View {
     }
 
     private var canSubmit: Bool {
-        canSend && (!draft.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty)
+        canSend && (!app.composerDraft.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty)
     }
 
     private func send() {
-        let text = draft
+        let text = app.composerDraft
         let toSend = attachments
         guard canSubmit else { return }
-        draft = ""
+        app.composerDraft = ""
         attachments = []
         Task { await store.sendPrompt(text, attachments: toSend) }
     }

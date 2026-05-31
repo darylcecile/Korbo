@@ -20,8 +20,8 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Top bar: local/remote (server) selector
 - [ ] P0 Top bar: account/avatar menu
 - [ ] P1 Bottom terminal dock (toggle, resize)
-- [ ] P1 Command palette (⌘P): sessions, files, commands, settings, actions
-- [ ] P1 Hardware‑keyboard shortcuts (mirror openchamber set where sensible)
+- [x] P1 Command palette (⌘P): sessions, files, commands, settings, actions — `CommandPalette.swift`, fuzzy file search (`/find/file`), grouped Actions/Sessions/Files, ↑↓ nav + ↵ run + Esc, blurred overlay
+- [x] P1 Hardware‑keyboard shortcuts (mirror openchamber set where sensible) — `GlobalShortcuts` in RootView: ⌘P palette, ⌘\ toggle right panel, ⌘1–4 git/files/terminal/context, ⌘N new session, ⌘⇧L focus composer, ⌘, settings, ⌘↵ send
 - [ ] P2 Mini chat window / multi‑window (Stage Manager)
 - [ ] P0 Dark theme baseline; light/system later
 
@@ -79,7 +79,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 ## 4. Composer
 - [ ] P0 Multiline auto‑growing input
 - [ ] P0 Placeholder "@ for files/agents; / for commands; ! for shell"
-- [ ] P0 Send (⌘↵) and Stop states
+- [x] P0 Send (⌘↵) and Stop states — composer send button bound to ⌘↵; Stop (⌘.) aborts while generating
 - [ ] P0 `@` mention autocomplete: files
 - [ ] P1 `@` mention autocomplete: agents
 - [ ] P1 `/` command/skill autocomplete
@@ -191,7 +191,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 ## 11. iPad‑native & platform
 - [ ] P0 iPad‑only target, landscape + portrait
 - [ ] P1 Local notifications (permission/question/idle/error)
-- [ ] P1 Hardware keyboard shortcuts
+- [x] P1 Hardware keyboard shortcuts — global ⌘-shortcuts via `GlobalShortcuts` (palette, panel toggles, tab switches, new session, focus composer, settings, send)
 - [ ] P1 Split View / Stage Manager friendliness
 - [ ] P1 Share sheet (share session/diff/output)
 - [ ] P2 App Intents / Shortcuts
