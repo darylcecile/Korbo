@@ -10,13 +10,14 @@ final class AppModel: ObservableObject {
     @Published var showSettingsSheet = false
 
     enum RightTab: String, CaseIterable, Identifiable {
-        case git, files, context
+        case git, files, terminal, context
         var id: String { rawValue }
         var title: String { rawValue }
         var systemImage: String {
             switch self {
             case .git: return "arrow.triangle.branch"
             case .files: return "folder"
+            case .terminal: return "terminal"
             case .context: return "doc.text.magnifyingglass"
             }
         }

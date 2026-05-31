@@ -172,10 +172,11 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P2 Tunnel / remote relay configuration
 
 ## 9. Terminal
-- [ ] P1 Create PTY session (shell picker, cwd)
-- [ ] P1 Connect over WebSocket (live I/O)
-- [ ] P1 Copy/paste; theme‑matched; font control
-- [ ] P2 Multiple terminal tabs
+- [x] P1 Create PTY session (shell picker, cwd) — `POST /pty`, `GET /pty/shells` shell menu
+- [x] P1 Connect over WebSocket (live I/O) — `ws://host/pty/{id}/connect`, SwiftTerm renderer, live ANSI colors + bidirectional stdin
+- [x] P1 Copy/paste; theme‑matched; font control — SwiftTerm input-accessory keyboard, monospaced font, dark theme‑matched
+- [x] P2 Multiple terminal tabs — header tab strip over running PTYs, "+" spawns new, trash kills
+- Deferred: pinch-to-zoom font sizing, persistent scrollback search (not exposed by opencode PTY API)
 
 ## 10. Connection, sync & realtime
 - [ ] P0 `ServerConfig` (baseURL + headers) in Keychain

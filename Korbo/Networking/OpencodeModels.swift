@@ -308,3 +308,27 @@ struct OCFileContent: Codable, Hashable {
 
     var isBinary: Bool { type == "binary" }
 }
+
+// MARK: - Terminal (PTY)
+
+/// A pseudo-terminal session from `GET/POST /pty`.
+struct OCPty: Codable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let command: String
+    let args: [String]
+    let cwd: String
+    let status: String
+    let pid: Int
+
+    var isRunning: Bool { status == "running" }
+}
+
+/// An available login shell from `GET /pty/shells`.
+struct OCShell: Codable, Identifiable, Hashable {
+    let path: String
+    let name: String
+    let acceptable: Bool
+
+    var id: String { path }
+}

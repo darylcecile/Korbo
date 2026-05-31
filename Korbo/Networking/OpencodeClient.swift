@@ -133,6 +133,59 @@ actor OpencodeClient {
         try await getJSON("/find/file?query=\(Self.queryEncode(query))&limit=\(limit)")
     }
 
+    // MARK: - Terminal (PTY)
+
+    /// `GET /pty/shells` — login shells the server can spawn.
+    func listShells() async throws -> [OCShell] {
+        try await getJSON("/pty/shells")
+    }
+
+    /// `GET /pty` — currently running PTY sessions.
+    func listPtys() async throws -> [OCPty] {
+        try await getJSON("/pty")
+    }
+
+    /// `POST /pty` — spawn a PTY. `command` defaults to the server's preferred shell.
+    func createPty(command: String? = nil, cwd: String? = nil, title: String? = nil) async throws -> OCPty {
+        var body: [String: Any] = [:]
+        if let command { body["command"] = command }
+        if let cwd { body["cwd"] = cwd }
+        if let title { body["title"] = title }
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try await postJSON("/pty", body: data)
+    }
+
+    /// `PUT /pty/{id}` with `{ size: { rows, cols } }` — resize the pseudo-terminal.
+    @discardableResult
+    func resizePty(_ id: String, rows: Int, cols: Int) async throws -> OCPty {
+        let data = try JSONSerialization.data(withJSONObject: ["size": ["rows": rows, "cols": cols]])
+        let (out, _) = try await raw(.put, "/pty/\(id)", body: data)
+        do { return try decoder.decode(OCPty.self, from: out) }
+        catch { throw OpencodeError.decoding(error) }
+    }
+
+    /// `DELETE /pty/{id}` — kill a PTY session.
+    @discardableResult
+    func killPty(_ id: String) async throws -> Bool {
+        let (out, _) = try await raw(.delete, "/pty/\(id)")
+        return (try? decoder.decode(Bool.self, from: out)) ?? true
+    }
+
+    /// WebSocket URL for live PTY I/O (`GET /pty/{id}/connect`). The server upgrades
+    /// this to a socket carrying raw output as text frames and `0x00`+JSON control
+    /// frames as binary; client writes raw stdin as text frames.
+    nonisolated func ptyWebSocketURL(_ id: String) -> URL? {
+        guard let http = makeURL("/pty/\(id)/connect") else { return nil }
+        var s = http.absoluteString
+        if s.hasPrefix("https://") { s = "wss://" + s.dropFirst("https://".count) }
+        else if s.hasPrefix("http://") { s = "ws://" + s.dropFirst("http://".count) }
+        return URL(string: s)
+    }
+
+    /// Auth/custom headers for the PTY WebSocket handshake.
+    nonisolated func socketHeaders() -> [String: String] { config.authHeaders() }
+
+
     /// Percent-encode a query-string value. `makeURL` concatenates raw strings, so
     /// reserved characters (space, `&`, `+`, `=`, `#`, `%`, `?`) must be escaped here.
     nonisolated static func queryEncode(_ value: String) -> String {

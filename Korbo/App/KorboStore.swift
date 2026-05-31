@@ -72,6 +72,13 @@ final class KorboStore: ObservableObject {
     /// Set while a provider API-key write/removal is in flight (drives Settings UI).
     @Published private(set) var isUpdatingAuth = false
 
+    /// Terminal (PTY) state. `ptys` are the running pseudo-terminals, `shells` the
+    /// shells the server offers, `activePtyID` the one shown in the Terminal tab.
+    @Published private(set) var ptys: [OCPty] = []
+    @Published private(set) var shells: [OCShell] = []
+    @Published var activePtyID: String?
+    @Published private(set) var isLoadingTerminal = false
+
     /// The two diff views opencode exposes through `/vcs/diff`.
     enum GitMode: String, CaseIterable, Identifiable {
         case working, branch
@@ -155,6 +162,9 @@ final class KorboStore: ObservableObject {
         fileContent = nil
         fileQuery = ""
         fileSearchResults = []
+        ptys = []
+        shells = []
+        activePtyID = nil
     }
 
     // MARK: - Loading
@@ -304,6 +314,61 @@ final class KorboStore: ObservableObject {
     func selectSession(_ id: String) async {
         selectedSessionID = id
         await loadMessages(sessionID: id)
+    }
+
+    // MARK: - Terminal (PTY)
+
+    /// The connected client, exposed so the Terminal view can open the PTY
+    /// WebSocket directly (live I/O is owned by the view, REST control by the store).
+    var activeClient: OpencodeClient? { client }
+
+    /// Load available shells and any already-running PTY sessions; pick an active one.
+    func loadTerminal() async {
+        guard let client else { return }
+        isLoadingTerminal = true
+        defer { isLoadingTerminal = false }
+        async let shellsResult = try? client.listShells()
+        async let ptysResult = try? client.listPtys()
+        shells = await shellsResult ?? []
+        ptys = await ptysResult ?? []
+        if activePtyID == nil || !ptys.contains(where: { $0.id == activePtyID }) {
+            activePtyID = ptys.first?.id
+        }
+    }
+
+    /// Spawn a new PTY (optionally with a specific shell) and select it.
+    func newPty(command: String? = nil) async {
+        guard let client else { return }
+        do {
+            let pty = try await client.createPty(command: command)
+            ptys.append(pty)
+            activePtyID = pty.id
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Kill a PTY and drop it from the list, re-selecting another if needed.
+    func killPty(_ id: String) async {
+        guard let client else { return }
+        do {
+            _ = try await client.killPty(id)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+        ptys.removeAll { $0.id == id }
+        if activePtyID == id { activePtyID = ptys.first?.id }
+    }
+
+    /// Inform the server of a terminal resize (cols/rows) so output wraps correctly.
+    func resizePty(_ id: String, rows: Int, cols: Int) async {
+        guard let client else { return }
+        _ = try? await client.resizePty(id, rows: rows, cols: cols)
+    }
+
+    /// Surface a live terminal/WebSocket error to the rest of the UI.
+    func reportTerminalError(_ message: String) {
+        lastError = "Terminal: \(message)"
     }
 
     // MARK: - Git / VCS
