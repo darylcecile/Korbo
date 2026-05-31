@@ -35,10 +35,21 @@ final class KorboStore: ObservableObject {
     @Published private(set) var commands: [OCCommand] = []
     @Published private(set) var isLoadingMessages = false
     @Published private(set) var lastError: String?
+    /// Sessions with an in-progress assistant run (drives the typing indicator
+    /// and the composer's stop button). Kept in sync from `session.status` /
+    /// `session.idle` events.
+    @Published private(set) var activeSessionIDs: Set<String> = []
+    /// Tool permission requests awaiting a user decision (inline cards in chat).
+    @Published private(set) var pendingPermissions: [OCPermission] = []
+
+    /// Whether the selected session is currently generating a reply.
+    var isGenerating: Bool {
+        guard let id = selectedSessionID else { return false }
+        return activeSessionIDs.contains(id)
+    }
 
     private var client: OpencodeClient?
     private var eventTask: Task<Void, Never>?
-    private var reconcileTask: Task<Void, Never>?
 
     init(servers: ServerStore? = nil) {
         self.servers = servers ?? ServerStore()
@@ -89,8 +100,8 @@ final class KorboStore: ObservableObject {
     private func teardown() async {
         eventTask?.cancel()
         eventTask = nil
-        reconcileTask?.cancel()
-        reconcileTask = nil
+        activeSessionIDs.removeAll()
+        pendingPermissions.removeAll()
     }
 
     // MARK: - Loading
@@ -142,12 +153,11 @@ final class KorboStore: ObservableObject {
         }
     }
 
-    /// Send a text prompt to the selected session via `prompt_async`. Streaming
-    /// deltas arrive over the event stream when a provider is generating; we also
-    /// reload from REST right after sending (and a couple of times shortly after)
-    /// so the user's message — and any immediate provider error — render promptly
-    /// even if the event stream is quiet. M2 replaces the reloads with full
-    /// event-driven streaming.
+    /// Send a text prompt to the selected session via `prompt_async`. The reply
+    /// streams live over `/global/event` (message/part updates + token deltas).
+    /// We mark the session active immediately for instant UI feedback and do one
+    /// REST reload so the user's message renders with its real ID; from there the
+    /// event stream drives everything until `session.idle`.
     func sendPrompt(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let client, let sid = selectedSessionID, !trimmed.isEmpty else { return }
@@ -157,27 +167,40 @@ final class KorboStore: ObservableObject {
         if let model = resolveModel() {
             body["model"] = ["providerID": model.providerID, "modelID": model.modelID]
         }
+        activeSessionIDs.insert(sid)
         do {
             let data = try JSONSerialization.data(withJSONObject: body)
             try await client.sendPromptAsync(sessionID: sid, body: data)
             await loadMessages(sessionID: sid)
-            scheduleReconcile(sessionID: sid)
+        } catch {
+            activeSessionIDs.remove(sid)
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// `POST /session/{id}/abort` — stop the in-progress run for the selected
+    /// session and reconcile from REST.
+    func abort() async {
+        guard let client, let sid = selectedSessionID else { return }
+        do {
+            try await client.abort(sessionID: sid)
+            activeSessionIDs.remove(sid)
+            await loadMessages(sessionID: sid)
         } catch {
             lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    /// Lightweight stand-in for live streaming: reload a few times after a send to
-    /// catch the assistant reply/error while the event stream is unreliable.
-    private func scheduleReconcile(sessionID: String) {
-        reconcileTask?.cancel()
-        reconcileTask = Task { [weak self] in
-            for delay in [1.0, 2.5, 5.0] {
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                guard let self, !Task.isCancelled,
-                      self.selectedSessionID == sessionID else { return }
-                await self.loadMessages(sessionID: sessionID)
-            }
+    /// Reply to a tool permission request (`once` / `always` / `reject`).
+    func replyPermission(_ permission: OCPermission, response: String) async {
+        guard let client else { return }
+        do {
+            try await client.replyPermission(sessionID: permission.sessionID,
+                                              permissionID: permission.id,
+                                              response: response)
+            pendingPermissions.removeAll { $0.id == permission.id }
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
         }
     }
 
@@ -243,7 +266,7 @@ final class KorboStore: ObservableObject {
                         backoff = 1
                     }
                 } catch {
-                    // stream dropped; fall through to backoff/reconnect
+                    // stream dropped; fall through to reconnect with backoff
                 }
                 if Task.isCancelled { break }
                 try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
@@ -263,6 +286,14 @@ final class KorboStore: ObservableObject {
         case .sessionDeleted:
             let id = props["info"]?["id"]?.stringValue ?? props["id"]?.stringValue
             if let id { sessions.removeAll { $0.id == id } }
+        case .sessionStatus:
+            // `{ sessionID, status: { type: "busy" | "idle" | … } }`
+            if let sid = props["sessionID"]?.stringValue {
+                let kind = props["status"]?["type"]?.stringValue
+                if kind == "idle" { markIdle(sid) } else { activeSessionIDs.insert(sid) }
+            }
+        case .sessionIdle:
+            if let sid = props["sessionID"]?.stringValue { markIdle(sid) }
         case .messageUpdated:
             if let message = props["info"]?.decode(OCMessage.self) {
                 upsertMessageInfo(message)
@@ -274,15 +305,39 @@ final class KorboStore: ObservableObject {
             if let part = props["part"]?.decode(OCPart.self) {
                 upsertPart(part)
             }
+        case .messagePartDelta:
+            // `{ sessionID, messageID, partID, field, delta }` — append streamed text.
+            if let mid = props["messageID"]?.stringValue,
+               let pid = props["partID"]?.stringValue,
+               let delta = props["delta"]?.stringValue {
+                appendDelta(messageID: mid, partID: pid,
+                            field: props["field"]?.stringValue ?? "text", delta: delta)
+            }
         case .messagePartRemoved:
             let mid = props["messageID"]?.stringValue
             let pid = props["partID"]?.stringValue ?? props["part"]?["id"]?.stringValue
             if let mid, let pid, let idx = messages.firstIndex(where: { $0.info.id == mid }) {
                 messages[idx].parts.removeAll { $0.id == pid }
             }
-        case .sessionIdle, .sessionError, .permissionAsked, .questionAsked,
-             .fileEdited, .vcsBranchUpdated, .serverConnected:
-            break // handled in later milestones (M2 streaming, M3 git, etc.)
+        case .permissionAsked:
+            if let permission = props.decode(OCPermission.self) ?? props["info"]?.decode(OCPermission.self) {
+                if !pendingPermissions.contains(where: { $0.id == permission.id }) {
+                    pendingPermissions.append(permission)
+                }
+            }
+        case .sessionError, .questionAsked, .fileEdited, .vcsBranchUpdated, .serverConnected:
+            break // handled in later milestones (M3 git, etc.)
+        }
+    }
+
+    /// Mark a session's run finished and reconcile its messages from REST so the
+    /// final authoritative state (completed time, cost, tokens) is correct even if
+    /// some streamed frames were missed.
+    private func markIdle(_ sessionID: String) {
+        activeSessionIDs.remove(sessionID)
+        pendingPermissions.removeAll { $0.sessionID == sessionID }
+        if sessionID == selectedSessionID {
+            Task { [weak self] in await self?.loadMessages(sessionID: sessionID) }
         }
     }
 
@@ -310,9 +365,32 @@ final class KorboStore: ObservableObject {
         guard let mid = part.messageID,
               let idx = messages.firstIndex(where: { $0.info.id == mid }) else { return }
         if let pidx = messages[idx].parts.firstIndex(where: { $0.id == part.id }) {
-            messages[idx].parts[pidx] = part
+            // Preserve any text already streamed in via deltas if the snapshot is
+            // empty (snapshots can arrive after deltas during a live run).
+            var incoming = part
+            if (incoming.text ?? "").isEmpty, let existing = messages[idx].parts[pidx].text, !existing.isEmpty {
+                incoming.text = existing
+            }
+            messages[idx].parts[pidx] = incoming
         } else {
             messages[idx].parts.append(part)
+        }
+    }
+
+    /// Append a streamed token delta to a part's text/reasoning field, creating a
+    /// stub part if the snapshot hasn't arrived yet.
+    private func appendDelta(messageID: String, partID: String, field: String, delta: String) {
+        guard let midx = messages.firstIndex(where: { $0.info.id == messageID }) else { return }
+        guard field == "text" || field == "reasoning" else { return }
+        if let pidx = messages[midx].parts.firstIndex(where: { $0.id == partID }) {
+            messages[midx].parts[pidx].text = (messages[midx].parts[pidx].text ?? "") + delta
+        } else {
+            let part = OCPart(id: partID,
+                              sessionID: messages[midx].info.sessionID,
+                              messageID: messageID,
+                              type: field == "reasoning" ? .reasoning : .text,
+                              text: delta)
+            messages[midx].parts.append(part)
         }
     }
 

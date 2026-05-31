@@ -161,17 +161,17 @@ enum OCPartType: String, Codable {
 /// Korbo renders today are surfaced; the rest remain in `state`/raw payloads.
 struct OCPart: Codable, Identifiable, Hashable {
     let id: String
-    var sessionID: String?
-    var messageID: String?
+    var sessionID: String? = nil
+    var messageID: String? = nil
     var type: OCPartType
-    var text: String?           // text / reasoning
-    var synthetic: Bool?
-    var callID: String?         // tool
-    var tool: String?           // tool name
-    var state: OCToolState?     // tool
-    var filename: String?       // file
-    var mime: String?           // file
-    var url: String?            // file
+    var text: String? = nil           // text / reasoning
+    var synthetic: Bool? = nil
+    var callID: String? = nil         // tool
+    var tool: String? = nil           // tool name
+    var state: OCToolState? = nil     // tool
+    var filename: String? = nil       // file
+    var mime: String? = nil           // file
+    var url: String? = nil            // file
 
     var isVisibleText: Bool {
         type == .text && (synthetic != true) && !(text ?? "").isEmpty
@@ -233,6 +233,18 @@ struct OCCommand: Codable, Identifiable, Hashable {
     let name: String
     var description: String?
     var agent: String?
+}
+
+/// A tool permission request raised mid-run (e.g. a bash/edit tool asking for
+/// approval). Decoded leniently; opencode carries extra metadata Korbo ignores.
+struct OCPermission: Codable, Identifiable, Hashable {
+    let id: String
+    var sessionID: String
+    var messageID: String?
+    var callID: String?
+    var type: String?
+    var title: String?
+    var pattern: String?
 }
 
 // MARK: - VCS / files

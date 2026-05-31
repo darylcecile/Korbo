@@ -4,7 +4,6 @@ struct ChatPane: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
     @State private var draft: String = ""
-    @State private var isSending = false
 
     private var session: OCSession? { store.selectedSession }
 
@@ -89,6 +88,14 @@ struct ChatPane: View {
                             MessageView(item: item)
                                 .id(item.id)
                         }
+                        ForEach(sessionPermissions) { permission in
+                            PermissionCard(permission: permission) { response in
+                                Task { await store.replyPermission(permission, response: response) }
+                            }
+                        }
+                        if store.isGenerating {
+                            TypingIndicator().id("typing")
+                        }
                         Color.clear.frame(height: 1).id("bottom")
                     }
                     .frame(maxWidth: 760)
@@ -96,11 +103,23 @@ struct ChatPane: View {
                     .padding(.horizontal, 24)
                     .padding(.vertical, 24)
                 }
-                .onChange(of: store.messages.count) { _, _ in
+                .onChange(of: streamSignature) { _, _ in
                     withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
         }
+    }
+
+    /// Permission requests scoped to the selected session.
+    private var sessionPermissions: [OCPermission] {
+        store.pendingPermissions.filter { $0.sessionID == store.selectedSessionID }
+    }
+
+    /// Changes whenever messages are added or streamed text grows, so the list
+    /// auto-scrolls during live token streaming (not just on new messages).
+    private var streamSignature: String {
+        let chars = store.messages.last?.parts.reduce(0) { $0 + ($1.text?.count ?? 0) } ?? 0
+        return "\(store.messages.count)-\(chars)-\(store.isGenerating)"
     }
 
     private func centeredHint(icon: String, title: String, subtitle: String) -> some View {
@@ -130,12 +149,19 @@ struct ChatPane: View {
                     Image(systemName: "paperclip")
                     Spacer()
                     Text(modelLabel).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                    Button { send() } label: {
-                        Image(systemName: isSending ? "stop.circle" : "paperplane.fill")
-                            .foregroundStyle(canSend && !draft.isEmpty ? Theme.accent : Theme.textTertiary)
+                    if store.isGenerating {
+                        Button { Task { await store.abort() } } label: {
+                            Image(systemName: "stop.fill").foregroundStyle(Theme.removed)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button { send() } label: {
+                            Image(systemName: "paperplane.fill")
+                                .foregroundStyle(canSend && !draft.isEmpty ? Theme.accent : Theme.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSend || draft.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!canSend || draft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
@@ -155,10 +181,73 @@ struct ChatPane: View {
         let text = draft
         guard canSend, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         draft = ""
-        isSending = true
-        Task {
-            await store.sendPrompt(text)
-            isSending = false
+        Task { await store.sendPrompt(text) }
+    }
+}
+
+/// Animated three-dot "assistant is generating" row shown while a run is active.
+private struct TypingIndicator: View {
+    @State private var phase = 0.0
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3) { i in
+                Circle()
+                    .fill(Theme.textTertiary)
+                    .frame(width: 7, height: 7)
+                    .opacity(phase == Double(i) ? 1 : 0.3)
+            }
         }
+        .padding(.vertical, 6)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: false)) {
+                phase = 2
+            }
+            Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { _ in
+                phase = (phase + 1).truncatingRemainder(dividingBy: 3)
+            }
+        }
+        .accessibilityLabel("Assistant is responding")
+    }
+}
+
+/// Inline card for a tool permission request (allow once / always / reject).
+private struct PermissionCard: View {
+    let permission: OCPermission
+    let onReply: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield").foregroundStyle(Theme.accent)
+                Text(permission.title ?? "Permission required")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            if let pattern = permission.pattern ?? permission.type {
+                Text(pattern)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(3)
+            }
+            HStack(spacing: 10) {
+                permissionButton("Allow once", "once", Theme.accent)
+                permissionButton("Always", "always", Theme.added)
+                permissionButton("Reject", "reject", Theme.removed)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panelRaised))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border, lineWidth: 1))
+    }
+
+    private func permissionButton(_ label: String, _ response: String, _ tint: Color) -> some View {
+        Button { onReply(response) } label: {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.18)))
+                .foregroundStyle(tint)
+        }
+        .buttonStyle(.plain)
     }
 }

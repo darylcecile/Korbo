@@ -96,20 +96,32 @@ actor OpencodeClient {
     }
 
     /// `POST /session/{id}/prompt_async` — fire-and-forget; the reply streams over
-    /// `GET /event`.
+    /// `GET /global/event` (and is also readable via `GET …/message`).
     func sendPromptAsync(sessionID: String, body: Data) async throws {
         _ = try await raw(.post, "/session/\(sessionID)/prompt_async", body: body)
     }
 
+    /// `POST /session/{id}/abort` — stop the in-progress run for a session.
+    func abort(sessionID: String) async throws {
+        _ = try await raw(.post, "/session/\(sessionID)/abort")
+    }
+
+    /// `POST /session/{id}/permissions/{permissionID}` — reply to a permission
+    /// request raised by a tool (`once` / `always` / `reject`).
+    func replyPermission(sessionID: String, permissionID: String, response: String) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["response": response])
+        _ = try await raw(.post, "/session/\(sessionID)/permissions/\(permissionID)", body: data)
+    }
+
     // MARK: - Event stream (SSE)
 
-    /// Opens `GET /event` and yields decoded envelopes until the task is cancelled
-    /// or the connection drops. Callers own reconnection/backoff.
+    /// Opens `GET /global/event` and yields decoded envelopes until the task is
+    /// cancelled or the connection drops. Callers own reconnection/backoff.
     nonisolated func events() -> AsyncThrowingStream<OCEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    guard let url = makeURL("/event") else { throw OpencodeError.invalidURL }
+                    guard let url = makeURL("/global/event") else { throw OpencodeError.invalidURL }
                     var request = URLRequest(url: url)
                     request.timeoutInterval = .infinity
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -120,23 +132,16 @@ actor OpencodeClient {
                         throw OpencodeError.http(status: http.statusCode, body: "")
                     }
 
-                    var dataLines: [String] = []
+                    // opencode emits one complete JSON object per `data:` line and
+                    // URLSession's AsyncBytes.lines does NOT yield the blank separator
+                    // lines, so decode + dispatch on each data line directly.
                     for try await line in bytes.lines {
-                        if line.isEmpty {
-                            // dispatch accumulated event
-                            if !dataLines.isEmpty {
-                                let payload = dataLines.joined(separator: "\n")
-                                dataLines.removeAll(keepingCapacity: true)
-                                if let data = payload.data(using: .utf8),
-                                   let event = try? JSONDecoder().decode(OCEvent.self, from: data) {
-                                    continuation.yield(event)
-                                }
-                            }
-                        } else if line.hasPrefix("data:") {
-                            let value = line.dropFirst(5).drop(while: { $0 == " " })
-                            dataLines.append(String(value))
+                        guard line.hasPrefix("data:") else { continue }
+                        let value = line.dropFirst(5).drop(while: { $0 == " " })
+                        if let data = String(value).data(using: .utf8),
+                           let event = try? JSONDecoder().decode(OCEvent.self, from: data) {
+                            continuation.yield(event)
                         }
-                        // other SSE fields (event:, id:, :comment) are ignored
                     }
                     continuation.finish()
                 } catch {
