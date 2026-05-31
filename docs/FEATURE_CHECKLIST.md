@@ -54,13 +54,13 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 Code blocks: syntax highlighting + copy button
 - [x] P0 Markdown: lists, tables, blockquotes, links, emphasis, inline code
 - [ ] P0 **Reasoning part**: collapsible "thinking" block (streamed)
-- [ ] P0 **Tool part**: generic tool call card (name, status, expand)
-- [ ] P0 Tool: bash/shell command + output (collapsible)
-- [ ] P0 Tool: edit/write/patch with **diff viewer** (added/removed)
-- [ ] P1 Tool: read/grep/glob/list rendering
-- [ ] P1 Tool: task (subagent) nested rendering
-- [ ] P1 Tool: full‑output modal/expand
-- [ ] P0 **Todo** list rendering (todowrite/`todo.updated`)
+- [x] P0 **Tool part**: generic tool call card (name, status, expand)
+- [x] P0 Tool: bash/shell command + output (collapsible)
+- [x] P0 Tool: edit/write/patch with **diff viewer** (added/removed)
+- [x] P1 Tool: read/grep/glob/list rendering
+- [x] P1 Tool: task (subagent) nested rendering
+- [x] P1 Tool: full‑output modal/expand
+- [x] P0 **Todo** list rendering (todowrite/`todo.updated`)
 - [x] P0 **File/image attachments** inline (user + assistant)
 - [ ] P1 Step / snapshot / patch / compaction parts
 - [ ] P0 Per‑message footer: tokens, cost, duration, timestamp

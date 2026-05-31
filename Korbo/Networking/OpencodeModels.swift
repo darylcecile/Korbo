@@ -185,6 +185,17 @@ struct OCToolState: Codable, Hashable {
     var output: String?
     var error: String?
     var input: JSONValue?
+    /// Tool-specific result detail (e.g. edit `diff`, bash `exit`/`output`,
+    /// grep `matches`, todowrite `todos`, task `sessionId`/`model`).
+    var metadata: JSONValue?
+    /// Execution timing (`start`/`end` epoch ms) used to show a duration badge.
+    var time: OCToolTime?
+}
+
+/// Tool execution timing in epoch milliseconds.
+struct OCToolTime: Codable, Hashable {
+    var start: Double?
+    var end: Double?
 }
 
 enum OCToolStatus: String, Codable {
