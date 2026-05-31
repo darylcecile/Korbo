@@ -127,12 +127,13 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Git identities (name/email, per‑directory)
 
 ## 6. Files tab (right)
-- [ ] P1 File tree (hierarchical, collapsible, filetype icons)
-- [ ] P1 File search/filter
-- [ ] P1 Context menu: open / new file / new folder / rename / delete
-- [ ] P1 File viewer with syntax highlighting + line numbers
-- [ ] P1 File editor (edit + save)
-- [ ] P1 **Autosave vs manual‑save toggle** + dirty indicator + ⌘S
+- [x] P1 File tree (hierarchical, collapsible, filetype icons) — lazy `GET /file?path=`, ignored-file dimming
+- [x] P1 File search/filter — fuzzy `GET /find/file?query=`, flat results w/ subpaths
+- [x] P1 File viewer with line numbers — read-only monospaced, binary notice, large-file cap
+- [ ] ~~P1 Context menu: open / new file / new folder / rename / delete~~ — deferred: opencode file API is **read-only** (no write/create/rename/delete endpoint)
+- [ ] ~~P1 File editor (edit + save)~~ — deferred: no write API (agent edits files via tools, not REST)
+- [ ] ~~P1 **Autosave vs manual‑save toggle** + dirty indicator + ⌘S~~ — deferred: no write API
+- [ ] P2 Syntax highlighting (viewer currently plain monospaced)
 - [ ] P2 Multiple open files (tabs, unsaved markers)
 - [ ] P2 Find & replace; go‑to‑line
 - [ ] P2 Minimap / code folding

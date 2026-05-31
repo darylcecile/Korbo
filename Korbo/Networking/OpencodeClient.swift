@@ -98,6 +98,31 @@ actor OpencodeClient {
         try await getJSON("/vcs/diff?mode=\(mode)")
     }
 
+    // MARK: - Files (read-only)
+
+    /// `GET /file?path=` — list one directory level of the workspace.
+    func listFiles(path: String) async throws -> [OCFileNode] {
+        try await getJSON("/file?path=\(Self.queryEncode(path))")
+    }
+
+    /// `GET /file/content?path=` — read a file's contents.
+    func readFile(path: String) async throws -> OCFileContent {
+        try await getJSON("/file/content?path=\(Self.queryEncode(path))")
+    }
+
+    /// `GET /find/file?query=` — fuzzy file-path search across the workspace.
+    func findFiles(query: String, limit: Int = 100) async throws -> [String] {
+        try await getJSON("/find/file?query=\(Self.queryEncode(query))&limit=\(limit)")
+    }
+
+    /// Percent-encode a query-string value. `makeURL` concatenates raw strings, so
+    /// reserved characters (space, `&`, `+`, `=`, `#`, `%`, `?`) must be escaped here.
+    nonisolated static func queryEncode(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: " &+=#%?")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
     // MARK: - Prompting
 
     /// `POST /session` — create a new session.

@@ -286,3 +286,24 @@ struct OCVcsFileDiff: Codable, Identifiable, Hashable {
     var deletions: Int
     var status: OCFileStatus?
 }
+
+/// A directory entry from `GET /file?path=` — one level of the workspace tree.
+struct OCFileNode: Codable, Identifiable, Hashable {
+    let name: String
+    let path: String
+    let absolute: String
+    let type: String
+    let ignored: Bool
+
+    var id: String { path }
+    var isDirectory: Bool { type == "directory" }
+}
+
+/// A file's contents from `GET /file/content?path=` (read-only).
+struct OCFileContent: Codable, Hashable {
+    let type: String
+    let content: String?
+    let diff: String?
+
+    var isBinary: Bool { type == "binary" }
+}

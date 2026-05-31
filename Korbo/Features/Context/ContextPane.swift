@@ -16,9 +16,7 @@ struct ContextPane: View {
             case .git:
                 GitPane()
             case .files:
-                comingSoon(icon: "folder",
-                           title: "File explorer",
-                           detail: "Browse and edit the workspace with a manual-save toggle — coming soon.")
+                FilesPane()
             case .context:
                 contextTab
             }

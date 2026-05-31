@@ -52,6 +52,18 @@ final class KorboStore: ObservableObject {
     /// Live text filter applied to the sessions sidebar (matches title/project).
     @Published var sessionQuery: String = ""
 
+    /// File explorer (read-only) state. The tree loads lazily one directory at a
+    /// time: `fileChildren[dirPath]` holds that directory's entries once fetched.
+    @Published private(set) var fileChildren: [String: [OCFileNode]] = [:]
+    @Published var expandedDirs: Set<String> = []
+    @Published private(set) var loadingDirs: Set<String> = []
+    @Published var selectedFilePath: String?
+    @Published private(set) var fileContent: OCFileContent?
+    @Published private(set) var isLoadingFile = false
+    @Published var fileQuery: String = ""
+    @Published private(set) var fileSearchResults: [String] = []
+    @Published private(set) var isSearchingFiles = false
+
     /// The two diff views opencode exposes through `/vcs/diff`.
     enum GitMode: String, CaseIterable, Identifiable {
         case working, branch
@@ -69,6 +81,7 @@ final class KorboStore: ObservableObject {
 
     private var client: OpencodeClient?
     private var eventTask: Task<Void, Never>?
+    private var fileSearchTask: Task<Void, Never>?
 
     init(servers: ServerStore? = nil) {
         self.servers = servers ?? ServerStore()
@@ -120,10 +133,19 @@ final class KorboStore: ObservableObject {
     private func teardown() async {
         eventTask?.cancel()
         eventTask = nil
+        fileSearchTask?.cancel()
+        fileSearchTask = nil
         activeSessionIDs.removeAll()
         pendingPermissions.removeAll()
         vcsInfo = nil
         gitFiles = []
+        fileChildren = [:]
+        expandedDirs = []
+        loadingDirs = []
+        selectedFilePath = nil
+        fileContent = nil
+        fileQuery = ""
+        fileSearchResults = []
     }
 
     // MARK: - Loading
@@ -190,6 +212,94 @@ final class KorboStore: ObservableObject {
         gitMode = mode
         gitFiles = []
         await loadGit()
+    }
+
+    // MARK: - Files (read-only explorer)
+
+    /// Load the workspace root once; safe to call on every tab appearance.
+    func loadFileRootIfNeeded() async {
+        guard client != nil, fileChildren["."] == nil, !loadingDirs.contains(".") else { return }
+        await loadDir(".")
+    }
+
+    /// Fetch one directory level into `fileChildren`.
+    private func loadDir(_ path: String) async {
+        guard let client else { return }
+        loadingDirs.insert(path)
+        defer { loadingDirs.remove(path) }
+        do {
+            let nodes = try await client.listFiles(path: path)
+            fileChildren[path] = sortNodes(nodes)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Expand/collapse a directory, lazily loading its children on first expand.
+    func toggleDir(_ node: OCFileNode) async {
+        let path = node.path
+        if expandedDirs.contains(path) {
+            expandedDirs.remove(path)
+        } else {
+            expandedDirs.insert(path)
+            if fileChildren[path] == nil { await loadDir(path) }
+        }
+    }
+
+    /// Open a file in the read-only viewer.
+    func openFile(_ path: String) async {
+        guard let client else { return }
+        selectedFilePath = path
+        fileContent = nil
+        isLoadingFile = true
+        defer { isLoadingFile = false }
+        do {
+            fileContent = try await client.readFile(path: path)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func closeFile() {
+        selectedFilePath = nil
+        fileContent = nil
+    }
+
+    /// Debounced file-path search; call on each `fileQuery` change.
+    func scheduleFileSearch() {
+        fileSearchTask?.cancel()
+        let query = fileQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            fileSearchResults = []
+            isSearchingFiles = false
+            return
+        }
+        isSearchingFiles = true
+        fileSearchTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.runFileSearch(query)
+        }
+    }
+
+    private func runFileSearch(_ query: String) async {
+        guard let client else { return }
+        defer { isSearchingFiles = false }
+        do {
+            let results = try await client.findFiles(query: query)
+            guard !Task.isCancelled else { return }
+            fileSearchResults = results
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Directories first, then case-insensitive name order.
+    private func sortNodes(_ nodes: [OCFileNode]) -> [OCFileNode] {
+        nodes.sorted {
+            if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
     }
 
     /// `POST /session` then select the new session.
