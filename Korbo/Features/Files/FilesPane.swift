@@ -9,7 +9,7 @@ struct FilesPane: View {
 
     var body: some View {
         Group {
-            if store.selectedFilePath != nil {
+            if store.activeFilePath != nil {
                 FileViewer()
             } else {
                 browser
@@ -241,106 +241,265 @@ private struct FileRow: Identifiable {
     var id: String { node.path }
 }
 
-// MARK: - File viewer (read-only)
 
-/// Read-only file viewer: header with the path + close, then line-numbered,
-/// monospaced content (capped) or a binary-file notice.
+// MARK: - File viewer (read-only, tabbed, syntax-highlighted)
+
+private struct FindMatch: Equatable { let line: Int; let occ: Int }
+
+/// Read-only viewer with a tab strip, syntax highlighting, find and go-to-line.
+/// Editing is not part of the opencode REST API, so this stays read-only.
 private struct FileViewer: View {
     @EnvironmentObject private var store: KorboStore
 
-    private static let maxLines = 1500
+    private static let maxLines = 2000
+
+    // Highlight cache (whole-file tokenisation is reused across find keystrokes).
+    @State private var lines: [[CodeRun]] = []
+    @State private var renderedKey: String = ""
+    @State private var truncated = false
+
+    // Find / go-to-line state (reset per tab).
+    @State private var findActive = false
+    @State private var findQuery = ""
+    @State private var matches: [FindMatch] = []
+    @State private var current = 0
+    @State private var gotoText = ""
+    @FocusState private var findFocused: Bool
+
+    private var activeKey: String {
+        let f = store.activeFile
+        return (f?.path ?? "") + "#" + String(f?.content?.content?.count ?? -1)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            tabStrip
+            Divider().overlay(Theme.border)
+            toolbar
             Divider().overlay(Theme.border)
             content
         }
+        .onChange(of: store.activeFilePath) { _ in resetFind(); refreshHighlight() }
+        .onChange(of: activeKey) { _ in refreshHighlight() }
+        .onChange(of: findQuery) { _ in recomputeMatches() }
+        .onAppear { refreshHighlight() }
     }
 
-    private var header: some View {
-        let (dir, name) = splitPath(store.selectedFilePath ?? "")
-        return HStack(spacing: 8) {
-            Button { store.closeFile() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
+    // MARK: Tab strip
+
+    private var tabStrip: some View {
+        HStack(spacing: 6) {
+            Button { store.activeFilePath = nil } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
             }
             .buttonStyle(.plain)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1).truncationMode(.middle)
-                if !dir.isEmpty {
-                    Text(dir)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1).truncationMode(.head)
+            .help("Show file browser")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(store.openFiles) { file in
+                        tab(file)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 40)
+    }
+
+    private func tab(_ file: OpenFile) -> some View {
+        let isActive = file.path == store.activeFilePath
+        let name = (file.path as NSString).lastPathComponent
+        return HStack(spacing: 6) {
+            Button { store.focusFile(file.path) } label: {
+                HStack(spacing: 5) {
+                    if file.isLoading {
+                        ProgressView().controlSize(.mini).tint(Theme.textTertiary)
+                    }
+                    Text(name)
+                        .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? Theme.textPrimary : Theme.textSecondary)
+                        .lineLimit(1)
                 }
             }
-            Spacer(minLength: 4)
+            .buttonStyle(.plain)
+            Button { store.closeFile(file.path) } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(isActive ? Theme.panelRaised : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(isActive ? Theme.border : Color.clear, lineWidth: 1)
+        )
     }
+
+    // MARK: Toolbar (find + go-to-line)
+
+    private var toolbar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12)).foregroundStyle(Theme.textTertiary)
+            TextField("Find in file", text: $findQuery)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textPrimary)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .focused($findFocused)
+                .frame(maxWidth: 220, alignment: .leading)
+
+            if !findQuery.isEmpty {
+                Text(matches.isEmpty ? "0/0" : "\(current + 1)/\(matches.count)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Theme.textTertiary)
+                navButton("chevron.up") { step(-1) }
+                navButton("chevron.down") { step(1) }
+                Button { findQuery = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12)).foregroundStyle(Theme.textTertiary)
+                }.buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "number")
+                .font(.system(size: 11)).foregroundStyle(Theme.textTertiary)
+            TextField("Line", text: $gotoText)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Theme.textPrimary)
+                .textFieldStyle(.plain)
+                .keyboardType(.numberPad)
+                .frame(width: 52)
+                .onSubmit { gotoLine() }
+            Button { gotoLine() } label: {
+                Text("Go").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+    }
+
+    private func navButton(_ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(matches.isEmpty ? Theme.textTertiary : Theme.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(matches.isEmpty)
+    }
+
+    // MARK: Content
 
     @ViewBuilder
     private var content: some View {
-        if store.isLoadingFile {
-            VStack(spacing: 10) {
-                Spacer()
-                ProgressView().tint(Theme.textTertiary)
-                Text("Loading…").font(.system(size: 12)).foregroundStyle(Theme.textTertiary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let file = store.fileContent {
-            if file.isBinary {
-                centeredNotice(icon: "doc.badge.ellipsis", text: "Binary file — preview unavailable")
+        if let file = store.activeFile {
+            if file.isLoading && file.content == nil {
+                centeredNotice(spinner: true, icon: "", text: "Loading…")
+            } else if let c = file.content {
+                if c.isBinary {
+                    centeredNotice(spinner: false, icon: "doc.badge.ellipsis",
+                                   text: "Binary file — preview unavailable")
+                } else {
+                    codeView
+                }
             } else {
-                codeView(file.content ?? "")
+                centeredNotice(spinner: false, icon: "exclamationmark.triangle",
+                               text: "Couldn't load file")
             }
         } else {
-            centeredNotice(icon: "exclamationmark.triangle", text: "Couldn't load file")
+            Color.clear
         }
     }
 
-    private func codeView(_ text: String) -> some View {
-        let all = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let lines = Array(all.prefix(Self.maxLines))
-        let truncated = all.count > Self.maxLines
+    private var codeView: some View {
         let gutter = max(2, String(lines.count).count)
-        return ScrollView([.vertical, .horizontal]) {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { idx, line in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text(String(format: "%\(gutter)d", idx + 1))
-                            .foregroundStyle(Theme.textTertiary)
-                        Text(line.isEmpty ? " " : line)
-                            .foregroundStyle(Theme.textPrimary)
-                            .fixedSize(horizontal: true, vertical: false)
+        return ScrollViewReader { proxy in
+            ScrollView([.vertical, .horizontal]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { idx, runs in
+                        lineRow(idx: idx, runs: runs, gutter: gutter)
+                            .id(idx)
                     }
-                    .font(.system(size: 12, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 1)
+                    if truncated {
+                        Text("… file truncated at \(Self.maxLines) lines")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Theme.textTertiary)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                    }
                 }
-                if truncated {
-                    Text("… file truncated at \(Self.maxLines) lines")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                }
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: current) { _ in scrollToCurrent(proxy) }
+            .onChange(of: scrollRequest) { target in
+                guard let target else { return }
+                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(target, anchor: .center) }
+            }
         }
     }
 
-    private func centeredNotice(icon: String, text: String) -> some View {
+    // A one-shot scroll target consumed by codeView's onChange.
+    @State private var scrollRequest: Int? = nil
+
+    private func lineRow(idx: Int, runs: [CodeRun], gutter: Int) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(String(format: "%\(gutter)d", idx + 1))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Theme.textTertiary)
+            Text(attributed(idx: idx, runs: runs))
+                .font(.system(size: 12, design: .monospaced))
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 1)
+    }
+
+    /// Build the coloured line, then overlay find-match backgrounds.
+    private func attributed(idx: Int, runs: [CodeRun]) -> AttributedString {
+        guard !runs.isEmpty else { return AttributedString(" ") }
+        var s = AttributedString()
+        for run in runs {
+            var piece = AttributedString(run.text)
+            piece.foregroundColor = run.kind.color
+            s += piece
+        }
+        guard !findQuery.isEmpty else { return s }
+        let active = matches.indices.contains(current) ? matches[current] : nil
+        var start = s.startIndex
+        var k = 0
+        while let r = s[start...].range(of: findQuery, options: .caseInsensitive) {
+            let isActive = (active?.line == idx && active?.occ == k)
+            s[r].backgroundColor = isActive ? Theme.accent : Theme.accent.opacity(0.28)
+            if isActive { s[r].foregroundColor = Theme.bg }
+            start = r.upperBound
+            k += 1
+        }
+        return s
+    }
+
+    private func centeredNotice(spinner: Bool, icon: String, text: String) -> some View {
         VStack(spacing: 10) {
             Spacer()
-            Image(systemName: icon).font(.system(size: 30)).foregroundStyle(Theme.textTertiary)
+            if spinner {
+                ProgressView().tint(Theme.textTertiary)
+            } else {
+                Image(systemName: icon).font(.system(size: 30)).foregroundStyle(Theme.textTertiary)
+            }
             Text(text)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
@@ -351,8 +510,63 @@ private struct FileViewer: View {
         .padding(24)
     }
 
-    private func splitPath(_ path: String) -> (dir: String, name: String) {
-        guard let slash = path.lastIndex(of: "/") else { return ("", path) }
-        return (String(path[..<slash]), String(path[path.index(after: slash)...]))
+    // MARK: Logic
+
+    private func refreshHighlight() {
+        guard let file = store.activeFile, let content = file.content, !content.isBinary,
+              let text = content.content else {
+            lines = []; truncated = false; renderedKey = activeKey; return
+        }
+        if renderedKey == activeKey && !lines.isEmpty { return }
+        let lang = SyntaxHighlighter.language(forPath: file.path)
+        var tokenised = SyntaxHighlighter.highlight(text, language: lang)
+        truncated = tokenised.count > Self.maxLines
+        if truncated { tokenised = Array(tokenised.prefix(Self.maxLines)) }
+        lines = tokenised
+        renderedKey = activeKey
+        recomputeMatches()
+    }
+
+    private func recomputeMatches() {
+        guard !findQuery.isEmpty else { matches = []; current = 0; return }
+        let q = findQuery.lowercased()
+        var result: [FindMatch] = []
+        for (idx, runs) in lines.enumerated() {
+            let text = runs.map(\.text).joined().lowercased()
+            guard !text.isEmpty else { continue }
+            var range = text.startIndex..<text.endIndex
+            var k = 0
+            while let r = text.range(of: q, range: range) {
+                result.append(FindMatch(line: idx, occ: k))
+                k += 1
+                range = r.upperBound..<text.endIndex
+            }
+        }
+        matches = result
+        current = result.isEmpty ? 0 : min(current, result.count - 1)
+        if !result.isEmpty { scrollRequest = result[current].line }
+    }
+
+    private func step(_ delta: Int) {
+        guard !matches.isEmpty else { return }
+        current = (current + delta + matches.count) % matches.count
+    }
+
+    private func scrollToCurrent(_ proxy: ScrollViewProxy) {
+        guard matches.indices.contains(current) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo(matches[current].line, anchor: .center)
+        }
+    }
+
+    private func gotoLine() {
+        guard let n = Int(gotoText.trimmingCharacters(in: .whitespaces)), !lines.isEmpty else { return }
+        let target = min(max(1, n), lines.count) - 1
+        scrollRequest = nil           // ensure onChange fires even for same value
+        DispatchQueue.main.async { scrollRequest = target }
+    }
+
+    private func resetFind() {
+        findQuery = ""; matches = []; current = 0; gotoText = ""
     }
 }

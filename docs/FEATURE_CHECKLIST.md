@@ -133,9 +133,9 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] ~~P1 Context menu: open / new file / new folder / rename / delete~~ — deferred: opencode file API is **read-only** (no write/create/rename/delete endpoint)
 - [ ] ~~P1 File editor (edit + save)~~ — deferred: no write API (agent edits files via tools, not REST)
 - [ ] ~~P1 **Autosave vs manual‑save toggle** + dirty indicator + ⌘S~~ — deferred: no write API
-- [ ] P2 Syntax highlighting (viewer currently plain monospaced)
-- [ ] P2 Multiple open files (tabs, unsaved markers)
-- [ ] P2 Find & replace; go‑to‑line
+- [x] P2 Syntax highlighting — dependency-free lexer (`SyntaxHighlighter.swift`), VS Code Dark+ palette, per-extension language detection
+- [x] P2 Multiple open files (tabs) — `OpenFile` tab model, tab strip with per-tab close (unsaved markers N/A: viewer is read-only)
+- [x] P2 Find & go‑to‑line — find bar (count, prev/next nav, highlight), go-to-line jump (replace N/A: read-only viewer)
 - [ ] P2 Minimap / code folding
 
 ## 7. Context tab (right)

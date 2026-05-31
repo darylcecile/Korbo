@@ -1,6 +1,15 @@
 import Foundation
 import Combine
 
+/// A read-only file open in a viewer tab. Content is loaded lazily and cached
+/// so re-selecting a tab is instant.
+struct OpenFile: Identifiable, Equatable {
+    let path: String
+    var content: OCFileContent?
+    var isLoading: Bool
+    var id: String { path }
+}
+
 enum ConnectionStatus: Equatable {
     case disconnected
     case connecting
@@ -57,9 +66,11 @@ final class KorboStore: ObservableObject {
     @Published private(set) var fileChildren: [String: [OCFileNode]] = [:]
     @Published var expandedDirs: Set<String> = []
     @Published private(set) var loadingDirs: Set<String> = []
-    @Published var selectedFilePath: String?
-    @Published private(set) var fileContent: OCFileContent?
-    @Published private(set) var isLoadingFile = false
+    /// Open file tabs (read-only). The viewer shows `activeFilePath`; the browser
+    /// shows when `openFiles` is empty. Each tab caches its own loaded content so
+    /// switching tabs is instant after the first load.
+    @Published private(set) var openFiles: [OpenFile] = []
+    @Published var activeFilePath: String?
     @Published var fileQuery: String = ""
     @Published private(set) var fileSearchResults: [String] = []
     @Published private(set) var isSearchingFiles = false
@@ -158,8 +169,8 @@ final class KorboStore: ObservableObject {
         fileChildren = [:]
         expandedDirs = []
         loadingDirs = []
-        selectedFilePath = nil
-        fileContent = nil
+        openFiles = []
+        activeFilePath = nil
         fileQuery = ""
         fileSearchResults = []
         ptys = []
@@ -433,23 +444,55 @@ final class KorboStore: ObservableObject {
         }
     }
 
-    /// Open a file in the read-only viewer.
+    /// Currently focused open file, if any.
+    var activeFile: OpenFile? {
+        guard let activeFilePath else { return nil }
+        return openFiles.first { $0.path == activeFilePath }
+    }
+
+    /// Open a file in the viewer. If already open, just focus its tab; otherwise
+    /// add a tab, focus it, and lazily load its content.
     func openFile(_ path: String) async {
         guard let client else { return }
-        selectedFilePath = path
-        fileContent = nil
-        isLoadingFile = true
-        defer { isLoadingFile = false }
+        if openFiles.contains(where: { $0.path == path }) {
+            activeFilePath = path
+            return
+        }
+        openFiles.append(OpenFile(path: path, content: nil, isLoading: true))
+        activeFilePath = path
         do {
-            fileContent = try await client.readFile(path: path)
+            let content = try await client.readFile(path: path)
+            updateOpenFile(path) { $0.content = content; $0.isLoading = false }
         } catch {
+            updateOpenFile(path) { $0.isLoading = false }
             lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    func closeFile() {
-        selectedFilePath = nil
-        fileContent = nil
+    /// Close one tab. Focus moves to the neighbouring tab (or the browser when
+    /// none remain).
+    func closeFile(_ path: String) {
+        guard let idx = openFiles.firstIndex(where: { $0.path == path }) else { return }
+        openFiles.remove(at: idx)
+        guard activeFilePath == path else { return }
+        if openFiles.isEmpty {
+            activeFilePath = nil
+        } else {
+            activeFilePath = openFiles[min(idx, openFiles.count - 1)].path
+        }
+    }
+
+    /// Close every tab and return to the browser.
+    func closeAllFiles() {
+        openFiles = []
+        activeFilePath = nil
+    }
+
+    func focusFile(_ path: String) { activeFilePath = path }
+
+    private func updateOpenFile(_ path: String, _ mutate: (inout OpenFile) -> Void) {
+        guard let idx = openFiles.firstIndex(where: { $0.path == path }) else { return }
+        mutate(&openFiles[idx])
     }
 
     /// Debounced file-path search; call on each `fileQuery` change.
