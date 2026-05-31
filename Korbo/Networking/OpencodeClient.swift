@@ -108,6 +108,31 @@ actor OpencodeClient {
         return try await postJSON("/session", body: data)
     }
 
+    /// `PATCH /session/{id}` with `{ title }` — rename a session.
+    @discardableResult
+    func updateSessionTitle(_ id: String, title: String) async throws -> OCSession {
+        let data = try JSONSerialization.data(withJSONObject: ["title": title])
+        let (out, _) = try await raw(.patch, "/session/\(id)", body: data)
+        do { return try decoder.decode(OCSession.self, from: out) }
+        catch { throw OpencodeError.decoding(error) }
+    }
+
+    /// `PATCH /session/{id}` with `{ time: { archived } }` — archive (non-zero
+    /// timestamp) or unarchive (`0`) a session.
+    @discardableResult
+    func setSessionArchived(_ id: String, archived: Bool) async throws -> OCSession {
+        let stamp = archived ? Int(Date().timeIntervalSince1970 * 1000) : 0
+        let data = try JSONSerialization.data(withJSONObject: ["time": ["archived": stamp]])
+        let (out, _) = try await raw(.patch, "/session/\(id)", body: data)
+        do { return try decoder.decode(OCSession.self, from: out) }
+        catch { throw OpencodeError.decoding(error) }
+    }
+
+    /// `DELETE /session/{id}` — permanently delete a session.
+    func deleteSession(_ id: String) async throws {
+        _ = try await raw(.delete, "/session/\(id)")
+    }
+
     /// `POST /session/{id}/prompt_async` — fire-and-forget; the reply streams over
     /// `GET /global/event` (and is also readable via `GET …/message`).
     func sendPromptAsync(sessionID: String, body: Data) async throws {

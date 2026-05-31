@@ -49,6 +49,9 @@ final class KorboStore: ObservableObject {
     /// Which diff the Git panel shows. Setting it reloads via `loadGit()`.
     @Published var gitMode: GitMode = .working
 
+    /// Live text filter applied to the sessions sidebar (matches title/project).
+    @Published var sessionQuery: String = ""
+
     /// The two diff views opencode exposes through `/vcs/diff`.
     enum GitMode: String, CaseIterable, Identifiable {
         case working, branch
@@ -197,6 +200,84 @@ final class KorboStore: ObservableObject {
             upsertSession(session)
             selectedSessionID = session.id
             messages = []
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    // MARK: - Session management (rename / archive / delete / grouping)
+
+    /// Root sessions (sub-sessions/forks are hidden from the top list) matching
+    /// the current `sessionQuery`, bucketed into recency groups plus Archived.
+    var sessionGroups: [SessionGroup] {
+        let q = sessionQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let visible = sessions.filter { session in
+            guard (session.parentID ?? "").isEmpty else { return false }
+            guard !q.isEmpty else { return true }
+            return (session.title ?? "").lowercased().contains(q)
+                || (session.projectName ?? "").lowercased().contains(q)
+        }
+
+        var buckets: [SessionBucket: [OCSession]] = [:]
+        for session in visible {
+            buckets[bucket(for: session), default: []].append(session)
+        }
+        return SessionBucket.allCases.compactMap { b in
+            guard let items = buckets[b], !items.isEmpty else { return nil }
+            return SessionGroup(bucket: b, sessions: items)
+        }
+    }
+
+    private func bucket(for session: OCSession) -> SessionBucket {
+        if session.isArchived { return .archived }
+        guard let date = session.lastActivity else { return .older }
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return .today }
+        if cal.isDateInYesterday(date) { return .yesterday }
+        if let days = cal.dateComponents([.day], from: date, to: Date()).day, days < 7 {
+            return .week
+        }
+        return .older
+    }
+
+    /// `PATCH /session/{id}` rename, then merge the returned session.
+    func renameSession(_ id: String, title: String) async {
+        guard let client else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            let updated = try await client.updateSessionTitle(id, title: trimmed)
+            upsertSession(updated)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Archive or unarchive a session.
+    func setSessionArchived(_ id: String, archived: Bool) async {
+        guard let client else { return }
+        do {
+            let updated = try await client.setSessionArchived(id, archived: archived)
+            upsertSession(updated)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Delete a session; if it was selected, fall back to the next available one.
+    func deleteSession(_ id: String) async {
+        guard let client else { return }
+        do {
+            try await client.deleteSession(id)
+            sessions.removeAll { $0.id == id }
+            if selectedSessionID == id {
+                selectedSessionID = sessions.first?.id
+                if let next = selectedSessionID {
+                    await loadMessages(sessionID: next)
+                } else {
+                    messages = []
+                }
+            }
         } catch {
             lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
         }
@@ -451,4 +532,29 @@ final class KorboStore: ObservableObject {
             ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
         }
     }
+}
+
+// MARK: - Session grouping
+
+/// Recency buckets for the sessions sidebar, in display order.
+enum SessionBucket: String, CaseIterable, Identifiable {
+    case today, yesterday, week, older, archived
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .today:     return "Today"
+        case .yesterday: return "Yesterday"
+        case .week:      return "Previous 7 days"
+        case .older:     return "Older"
+        case .archived:  return "Archived"
+        }
+    }
+}
+
+/// A titled section of sessions for the sidebar.
+struct SessionGroup: Identifiable {
+    let bucket: SessionBucket
+    let sessions: [OCSession]
+    var id: String { bucket.id }
+    var title: String { bucket.title }
 }

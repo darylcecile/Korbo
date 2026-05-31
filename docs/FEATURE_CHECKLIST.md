@@ -26,22 +26,22 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 Dark theme baseline; light/system later
 
 ## 2. Sessions sidebar (left)
-- [ ] P0 Session list with live data from `/session` + events
-- [ ] P0 Grouping: recent (today/yesterday/7‑days/older)
+- [x] P0 Session list with live data from `/session` + events
+- [x] P0 Grouping: recent (today/yesterday/7‑days/older)
 - [ ] P1 Grouping: by project/folder
 - [ ] P1 Grouping: by worktree/branch
-- [ ] P0 Grouping: archived section
-- [ ] P0 Item: title, project, branch indicator, +/− diff, relative time
-- [ ] P1 Item: streaming/active badge, pin/favourite badge
-- [ ] P0 New session
+- [x] P0 Grouping: archived section
+- [x] P0 Item: title, project, +/− diff, relative time *(branch is workspace‑level in opencode, not per‑session — omitted)*
+- [~] P1 Item: streaming/active badge *(active dot done; pin/favourite deferred)*
+- [x] P0 New session
 - [ ] P1 New worktree/branch session
-- [ ] P0 Search/filter sessions
+- [x] P0 Search/filter sessions
 - [ ] P2 Calendar/activity (by date)
-- [ ] P0 Context menu: rename
-- [ ] P0 Context menu: delete (confirm)
-- [ ] P0 Context menu: archive/unarchive
+- [x] P0 Context menu: rename
+- [x] P0 Context menu: delete (confirm)
+- [x] P0 Context menu: archive/unarchive
 - [ ] P1 Context menu: fork/duplicate
-- [ ] P1 Context menu: share (link) / unshare
+- [ ] P1 Context menu: share (link) / unshare *(API: `/session/{id}/share` exists — deferrable)*
 - [ ] P1 Context menu: pin/unpin
 - [ ] P2 Multi‑select + bulk actions (archive/delete/pin)
 - [ ] P2 Drag‑reorder / sort options
