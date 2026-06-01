@@ -49,7 +49,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 
 ## 3. Conversation view (center)
 - [x] P0 Message list, user vs assistant distinction — user turns render as right-aligned bubbles, assistant turns left-aligned with a sparkle avatar + model/mode badge; verified on device
-- [x] P0 Message header: sender/model logo, model badge, agent badge — each assistant turn shows the model id (e.g. `claude-sonnet-4.6`) plus the agent/mode badge (e.g. `build`/`plan`/`compaction`); verified on device
+- [x] P0 Message header: sender/model logo, model badge, agent badge — each assistant turn shows the model id (e.g. `claude-sonnet-4.6`) plus the agent/mode badge (e.g. `build`/`plan`/`compaction`); verified on device. opencode emits one message per agent step, so consecutive same-model assistant messages are **grouped**: the model/agent header renders once at the start of the group and the duration/token/cost footer once at the end, so a multi-tool turn reads as a single response instead of repeating the header + token count on every tool call; verified on device (a 6-tool turn under one `claude-opus-4.6 build` header)
 - [x] P1 Reasoning‑effort/variant badge — `reasoningMenu` brain-icon chip in composer footer shows the active variant (e.g. "Medium"); hidden for non-reasoning models; verified on device
 - [x] P0 **Text part**: markdown rendering
 - [x] P0 Code blocks: syntax highlighting + copy button

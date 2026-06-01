@@ -4,6 +4,14 @@ import UIKit
 /// Renders a single message (user or assistant) and its ordered parts.
 struct MessageView: View {
     let item: OCMessageItem
+    /// Whether to show the model/agent header. Suppressed for continuation
+    /// messages in the same assistant response group (same model) so a multi-
+    /// step turn reads as one response rather than repeating the header.
+    var showHeader: Bool = true
+    /// Whether to show the duration/token/cost footer. Suppressed for all but
+    /// the last message in an assistant group so the token count isn't repeated
+    /// on every tool-call step.
+    var showFooter: Bool = true
     @EnvironmentObject private var store: KorboStore
     @ObservedObject private var speech = SpeechController.shared
     @ObservedObject private var appearance = AppearanceStore.shared
@@ -98,14 +106,16 @@ struct MessageView: View {
 
     private var assistantMessage: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkle").foregroundStyle(Theme.accent)
-                    .accessibilityHidden(true)
-                if let model = item.info.modelLabel {
-                    Text(model).font(.system(size: 13, weight: .semibold))
-                }
-                if let agent = item.info.agent {
-                    badge(agent, Theme.added)
+            if showHeader {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkle").foregroundStyle(Theme.accent)
+                        .accessibilityHidden(true)
+                    if let model = item.info.modelLabel {
+                        Text(model).font(.system(size: 13, weight: .semibold))
+                    }
+                    if let agent = item.info.agent {
+                        badge(agent, Theme.added)
+                    }
                 }
             }
 
@@ -121,7 +131,9 @@ struct MessageView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(Theme.removed.opacity(0.12)))
             }
 
-            footer
+            if showFooter {
+                footer
+            }
         }
         .contextMenu { assistantMessageContextMenu }
     }

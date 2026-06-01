@@ -464,8 +464,12 @@ struct ChatPane: View {
                         ScrollView {
                             VStack(spacing: 0) {
                                 LazyVStack(alignment: .leading, spacing: 20) {
-                                    ForEach(store.messages) { item in
-                                        MessageView(item: item)
+                                    ForEach(Array(store.messages.enumerated()), id: \.element.id) { index, item in
+                                        MessageView(
+                                            item: item,
+                                            showHeader: showsHeader(at: index),
+                                            showFooter: showsFooter(at: index)
+                                        )
                                             .id(item.id)
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 12)
@@ -552,6 +556,37 @@ struct ChatPane: View {
     /// Permission requests scoped to the selected session.
     private var sessionPermissions: [OCPermission] {
         store.pendingPermissions.filter { $0.sessionID == store.selectedSessionID }
+    }
+
+    // MARK: Message grouping
+
+    /// Two assistant messages belong to the same response group when both are
+    /// from the assistant using the same model + agent. opencode emits one
+    /// message per agent step (text → tool → tool → text …), so a single user
+    /// turn becomes many consecutive assistant messages; grouping them lets us
+    /// show the model header once and the token footer once per response.
+    private func sameAssistantGroup(_ a: OCMessageItem, _ b: OCMessageItem) -> Bool {
+        a.info.role == .assistant && b.info.role == .assistant
+            && a.info.modelLabel == b.info.modelLabel
+            && a.info.agent == b.info.agent
+    }
+
+    /// Show the model/agent header only at the start of an assistant group
+    /// (and always for user messages).
+    private func showsHeader(at index: Int) -> Bool {
+        let msgs = store.messages
+        guard msgs[index].info.role == .assistant else { return true }
+        guard index > 0 else { return true }
+        return !sameAssistantGroup(msgs[index - 1], msgs[index])
+    }
+
+    /// Show the duration/token/cost footer only at the end of an assistant
+    /// group (and always for user messages, which have no footer anyway).
+    private func showsFooter(at index: Int) -> Bool {
+        let msgs = store.messages
+        guard msgs[index].info.role == .assistant else { return true }
+        guard index < msgs.count - 1 else { return true }
+        return !sameAssistantGroup(msgs[index], msgs[index + 1])
     }
 
     /// Question requests scoped to the selected session.
