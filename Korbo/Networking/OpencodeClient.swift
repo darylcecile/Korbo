@@ -229,6 +229,44 @@ actor OpencodeClient {
         _ = try await raw(.delete, "/session/\(id)")
     }
 
+    /// `POST /session/{id}/fork` — duplicate a session (optionally up to a
+    /// specific `messageID`). Returns the new session (titled "… (fork #N)").
+    func forkSession(_ id: String, messageID: String? = nil) async throws -> OCSession {
+        var body: [String: Any] = [:]
+        if let messageID { body["messageID"] = messageID }
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try await postJSON("/session/\(id)/fork", body: data)
+    }
+
+    /// `POST /session/{id}/share` — publish a public share link. Returns the
+    /// session with `share.url` populated.
+    @discardableResult
+    func shareSession(_ id: String) async throws -> OCSession {
+        let (out, _) = try await raw(.post, "/session/\(id)/share")
+        do { return try decoder.decode(OCSession.self, from: out) }
+        catch { throw OpencodeError.decoding(error) }
+    }
+
+    /// `DELETE /session/{id}/share` — revoke the public share link.
+    @discardableResult
+    func unshareSession(_ id: String) async throws -> OCSession {
+        let (out, _) = try await raw(.delete, "/session/\(id)/share")
+        do { return try decoder.decode(OCSession.self, from: out) }
+        catch { throw OpencodeError.decoding(error) }
+    }
+
+    /// `POST /session/{id}/command` — run a registered `/command` (with optional
+    /// free-text `arguments`). The assistant reply streams over `/global/event`.
+    func runCommand(sessionID: String, command: String, arguments: String?,
+                    agent: String?, model: OCModelRef?) async throws {
+        var body: [String: Any] = ["command": command]
+        if let arguments, !arguments.isEmpty { body["arguments"] = arguments }
+        if let agent { body["agent"] = agent }
+        if let model { body["model"] = "\(model.providerID)/\(model.modelID)" }
+        let data = try JSONSerialization.data(withJSONObject: body)
+        _ = try await raw(.post, "/session/\(sessionID)/command", body: data)
+    }
+
     /// `POST /session/{id}/prompt_async` — fire-and-forget; the reply streams over
     /// `GET /global/event` (and is also readable via `GET …/message`).
     func sendPromptAsync(sessionID: String, body: Data) async throws {

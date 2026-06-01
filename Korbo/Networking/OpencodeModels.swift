@@ -60,6 +60,10 @@ struct OCSession: Codable, Identifiable, Hashable {
     }
 
     var isArchived: Bool { (time?.archived ?? 0) > 0 }
+
+    /// Whether this session has a published public share link.
+    var isShared: Bool { !(share?.url ?? "").isEmpty }
+    var shareURL: String? { share?.url }
 }
 
 struct OCModelRef: Codable, Hashable {
