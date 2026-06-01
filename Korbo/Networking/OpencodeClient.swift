@@ -317,6 +317,24 @@ actor OpencodeClient {
         _ = try await raw(.post, "/session/\(sessionID)/permissions/\(permissionID)", body: data)
     }
 
+    /// `DELETE /session/{id}/message/{messageID}` — permanently remove a single
+    /// message (and its parts) from the conversation.
+    func deleteMessage(sessionID: String, messageID: String) async throws {
+        _ = try await raw(.delete, "/session/\(sessionID)/message/\(messageID)")
+    }
+
+    /// `POST /question/{requestID}/reply` — answer a question the agent asked.
+    /// `answers` is one array of selected option labels per question, in order.
+    func replyQuestion(requestID: String, answers: [[String]]) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["answers": answers])
+        _ = try await raw(.post, "/question/\(requestID)/reply", body: data)
+    }
+
+    /// `POST /question/{requestID}/reject` — dismiss a question without answering.
+    func rejectQuestion(requestID: String) async throws {
+        _ = try await raw(.post, "/question/\(requestID)/reject")
+    }
+
     // MARK: - Event stream (SSE)
 
     /// Opens `GET /global/event` and yields decoded envelopes until the task is

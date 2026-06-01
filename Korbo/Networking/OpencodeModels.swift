@@ -336,6 +336,28 @@ struct OCPermission: Codable, Identifiable, Hashable {
     var pattern: String?
 }
 
+/// A question the agent raises mid-run (`question.asked`), awaiting the user's
+/// selection from a set of options. Mirrors the permission flow but supports
+/// multiple discrete questions, multi-select, and free-text custom answers.
+struct OCQuestion: Codable, Identifiable, Hashable {
+    let id: String
+    var sessionID: String
+    var questions: [OCQuestionInfo]
+}
+
+struct OCQuestionInfo: Codable, Hashable {
+    var question: String
+    var header: String
+    var options: [OCQuestionOption]
+    var multiple: Bool?
+    var custom: Bool?
+}
+
+struct OCQuestionOption: Codable, Hashable {
+    var label: String
+    var description: String
+}
+
 // MARK: - VCS / files
 
 /// Git/VCS file change status as reported by `/file/status` and `/vcs/status`.

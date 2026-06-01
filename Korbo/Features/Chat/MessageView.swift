@@ -7,10 +7,19 @@ struct MessageView: View {
     @EnvironmentObject private var store: KorboStore
     @ObservedObject private var speech = SpeechController.shared
     @State private var showCopyConfirm = false
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         content
             .opacity(store.isMessageReverted(item.id) ? 0.45 : 1)
+            .confirmationDialog("Delete this message?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    Task { await store.deleteMessage(item.id) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This permanently removes the message from the conversation.")
+            }
     }
 
     @ViewBuilder
@@ -116,6 +125,11 @@ struct MessageView: View {
             Task { await store.revert(toMessageID: item.id) }
         } label: {
             Label("Revert to here", systemImage: "arrow.uturn.backward")
+        }
+        Button(role: .destructive) {
+            showDeleteConfirm = true
+        } label: {
+            Label("Delete message", systemImage: "trash")
         }
     }
 

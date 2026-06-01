@@ -53,7 +53,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 **Text part**: markdown rendering
 - [x] P0 Code blocks: syntax highlighting + copy button
 - [x] P0 Markdown: lists, tables, blockquotes, links, emphasis, inline code
-- [ ] P0 **Reasoning part**: collapsible "thinking" block (streamed)
+- [x] P0 **Reasoning part**: collapsible "thinking" block (streamed) — `ReasoningView` in MessageView renders a chevron-expandable dimmed block per reasoning part; siblings collapse independently; verified on device
 - [x] P0 **Tool part**: generic tool call card (name, status, expand)
 - [x] P0 Tool: bash/shell command + output (collapsible)
 - [x] P0 Tool: edit/write/patch with **diff viewer** (added/removed)
@@ -66,11 +66,12 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 Per‑message footer: tokens, cost, duration, timestamp
 - [x] P0 Message actions: copy — context-menu Copy (long-press) on user + assistant messages, plus inline copy button in the assistant footer with a 1.2s checkmark confirmation; verified on device (clipboard round-trip)
 - [x] P1 Message actions: share, fork, revert/unrevert — share (ShareLink), "Fork from here" (POST `/session/{id}/fork` w/ `messageID`), and "Revert to here" (POST `/session/{id}/revert` `{messageID}`, destructive) in the per-message context menu; reverted messages stay in the list but dim to 0.45 opacity, with a top "Reverted — N messages hidden · Undo" banner whose Undo calls POST `/session/{id}/unrevert`; verified on device
+- [x] P1 Message actions: delete — destructive "Delete message" (trash) in the per-message context menu opens a "Delete this message?" confirmation dialog; confirm calls DELETE `/session/{id}/message/{messageID}` with optimistic local removal + rollback on error; verified on device (menu + confirmation dialog)
 - [x] P1 Session summarize / compact — header compress button (POST `/session/{id}/summarize` `{providerID,modelID,auto}`) triggers a server-side compaction turn; in-flight spinner via `isSummarizing` (POST blocks until compaction completes); verified on device (compaction badge turn started)
 - [ ] P0 Streaming: incremental text/reasoning/tool deltas
 - [ ] P0 Abort/stop active run
 - [ ] P0 Inline **permission** card (allow once / always / reject)
-- [ ] P1 Inline **question** card (reply / reject)
+- [x] P1 Inline **question** card (reply / reject) — `question.asked` decodes into `pendingQuestions`; `QuestionCard` in ChatPane (mirrors PermissionCard chrome) renders per-question option chips (single/multi-select via FlowLayout) + optional custom TextField, Submit → POST `/question/{requestID}/reply` `{answers:[[label]]}`, Dismiss → POST `/question/{requestID}/reject`; `question.replied`/`question.rejected` events clear the card. Build-verified + render path identical to verified-working permission card; **not yet triggered live on-device** (raised only by the agent's `question` tool, which can't be injected via the read-only SSE stream)
 - [ ] P0 Empty state
 - [x] P0 Error state (+ retry) — connection-failure banner with `lastError` + Retry (see Connection-status banner)
 - [ ] P1 Pending‑changes bar (unstaged git) — intentionally dropped (redundant with the git panel)
@@ -145,6 +146,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Context‑limit warning — total vs model `limit.context` with % and an amber warning at ≥80%; verified on device (200K window resolved)
 - [ ] P1 Remove item from context / view file
 - [ ] P2 Context modes/tabs (diff/file/context/plan/preview/browser)
+- [x] P1 Agent todo panel — Context tab "Agent todos" panel reads the latest `todowrite`/`todoread` tool part (`store.latestTodos`), showing completed/total progress + per-row glyph (half-circle for in-progress accent, struck-through green when completed) and priority; hidden when empty; verified on device
 - [ ] P2 Plan editor; project notes & todo panel
 
 ## 8. Settings — M6 delivered (SettingsView + ChatPane pickers)

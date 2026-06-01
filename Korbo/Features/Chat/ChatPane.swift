@@ -326,6 +326,9 @@ struct ChatPane: View {
                                             Task { await store.replyPermission(permission, response: response) }
                                         }
                                     }
+                                    ForEach(sessionQuestions) { question in
+                                        QuestionCard(question: question)
+                                    }
                                     if store.isGenerating {
                                         TypingIndicator().id("typing")
                                     }
@@ -390,6 +393,11 @@ struct ChatPane: View {
     /// Permission requests scoped to the selected session.
     private var sessionPermissions: [OCPermission] {
         store.pendingPermissions.filter { $0.sessionID == store.selectedSessionID }
+    }
+
+    /// Question requests scoped to the selected session.
+    private var sessionQuestions: [OCQuestion] {
+        store.pendingQuestions.filter { $0.sessionID == store.selectedSessionID }
     }
 
     /// Changes whenever messages are added or streamed text grows, so the list
@@ -1062,6 +1070,221 @@ private struct PermissionCard: View {
                 .foregroundStyle(tint)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Inline card for an agent question (single or multi-question, single or multi-select).
+private struct QuestionCard: View {
+    let question: OCQuestion
+    @EnvironmentObject private var store: KorboStore
+
+    @State private var selections: [Set<String>] = []
+    @State private var customTexts: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Header row
+            HStack(spacing: 8) {
+                Image(systemName: "questionmark.bubble").foregroundStyle(Theme.accent)
+                Text("Question")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+
+            // Render each question info
+            ForEach(Array(question.questions.enumerated()), id: \.offset) { idx, info in
+                questionSection(info: info, index: idx)
+            }
+
+            // Action buttons
+            HStack(spacing: 10) {
+                Button {
+                    Task { await submitAnswers() }
+                } label: {
+                    Text("Submit")
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.accent.opacity(0.18)))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSubmit)
+                .opacity(canSubmit ? 1 : 0.5)
+
+                Button {
+                    Task { await store.rejectQuestion(question) }
+                } label: {
+                    Text("Dismiss")
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.removed.opacity(0.18)))
+                        .foregroundStyle(Theme.removed)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panelRaised))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border, lineWidth: 1))
+        .onAppear { initializeState() }
+    }
+
+    private func initializeState() {
+        if selections.isEmpty {
+            selections = Array(repeating: Set<String>(), count: question.questions.count)
+        }
+        if customTexts.isEmpty {
+            customTexts = Array(repeating: "", count: question.questions.count)
+        }
+    }
+
+    @ViewBuilder
+    private func questionSection(info: OCQuestionInfo, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header (uppercase caption)
+            if !info.header.isEmpty {
+                Text(info.header.uppercased())
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary)
+                    .tracking(0.5)
+            }
+
+            // Question text
+            Text(info.question)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+
+            // Option chips
+            FlowLayout(spacing: 8) {
+                ForEach(info.options, id: \.label) { option in
+                    optionChip(option: option, index: index, isMultiple: info.multiple ?? false)
+                }
+            }
+
+            // Custom text field if allowed
+            if info.custom == true {
+                TextField("Other...", text: binding(for: index))
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+            }
+        }
+    }
+
+    private func optionChip(option: OCQuestionOption, index: Int, isMultiple: Bool) -> some View {
+        let isSelected = selections.indices.contains(index) && selections[index].contains(option.label)
+        return Button {
+            toggleSelection(label: option.label, index: index, isMultiple: isMultiple)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.label)
+                    .font(.system(size: 12, weight: .medium))
+                if !option.description.isEmpty {
+                    Text(option.description)
+                        .font(.system(size: 10))
+                        .foregroundStyle(isSelected ? Theme.accent.opacity(0.8) : Theme.textTertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Theme.accent.opacity(0.18) : Theme.panel)
+            )
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Theme.accent.opacity(0.4) : Theme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleSelection(label: String, index: Int, isMultiple: Bool) {
+        guard selections.indices.contains(index) else { return }
+        if isMultiple {
+            if selections[index].contains(label) {
+                selections[index].remove(label)
+            } else {
+                selections[index].insert(label)
+            }
+        } else {
+            // Single select: replace
+            selections[index] = [label]
+        }
+    }
+
+    private func binding(for index: Int) -> Binding<String> {
+        Binding(
+            get: { customTexts.indices.contains(index) ? customTexts[index] : "" },
+            set: { if customTexts.indices.contains(index) { customTexts[index] = $0 } }
+        )
+    }
+
+    private var canSubmit: Bool {
+        guard selections.count == question.questions.count,
+              customTexts.count == question.questions.count else { return false }
+        for (idx, info) in question.questions.enumerated() {
+            let hasSelection = !selections[idx].isEmpty
+            let hasCustom = (info.custom == true) && !customTexts[idx].trimmingCharacters(in: .whitespaces).isEmpty
+            if !hasSelection && !hasCustom { return false }
+        }
+        return true
+    }
+
+    private func submitAnswers() async {
+        var answers: [[String]] = []
+        for (idx, info) in question.questions.enumerated() {
+            var answerSet = Array(selections[idx])
+            if info.custom == true {
+                let trimmed = customTexts[idx].trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty { answerSet.append(trimmed) }
+            }
+            answers.append(answerSet)
+        }
+        await store.replyQuestion(question, answers: answers)
+    }
+}
+
+/// Simple flow layout for wrapping chips.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = layout(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = layout(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var lineHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > maxWidth && currentX > 0 {
+                currentX = 0
+                currentY += lineHeight + spacing
+                lineHeight = 0
+            }
+            positions.append(CGPoint(x: currentX, y: currentY))
+            lineHeight = max(lineHeight, size.height)
+            currentX += size.width + spacing
+        }
+
+        let totalHeight = currentY + lineHeight
+        return (CGSize(width: maxWidth, height: totalHeight), positions)
     }
 }
 

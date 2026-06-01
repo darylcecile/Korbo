@@ -46,6 +46,8 @@ enum OCEventType: String {
     // interaction
     case permissionAsked = "permission.asked"
     case questionAsked = "question.asked"
+    case questionReplied = "question.replied"
+    case questionRejected = "question.rejected"
 
     // workspace / vcs
     case fileEdited = "file.edited"

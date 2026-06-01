@@ -60,6 +60,8 @@ final class KorboStore: ObservableObject {
     @Published private(set) var activeSessionIDs: Set<String> = []
     /// Tool permission requests awaiting a user decision (inline cards in chat).
     @Published private(set) var pendingPermissions: [OCPermission] = []
+    /// Agent questions awaiting the user's answer (inline cards in chat).
+    @Published private(set) var pendingQuestions: [OCQuestion] = []
 
     /// Git panel state: branch info + the changed files for the current diff mode.
     @Published private(set) var vcsInfo: OCVcsInfo?
@@ -191,6 +193,7 @@ final class KorboStore: ObservableObject {
         fileSearchTask = nil
         activeSessionIDs.removeAll()
         pendingPermissions.removeAll()
+        pendingQuestions.removeAll()
         vcsInfo = nil
         gitFiles = []
         fileChildren = [:]
@@ -1029,6 +1032,58 @@ final class KorboStore: ObservableObject {
         }
     }
 
+    /// Answer an agent question. `answers` is one array of selected option labels
+    /// per question, in the same order as `question.questions`.
+    func replyQuestion(_ question: OCQuestion, answers: [[String]]) async {
+        guard let client else { return }
+        pendingQuestions.removeAll { $0.id == question.id }
+        do {
+            try await client.replyQuestion(requestID: question.id, answers: answers)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Dismiss an agent question without answering it.
+    func rejectQuestion(_ question: OCQuestion) async {
+        guard let client else { return }
+        pendingQuestions.removeAll { $0.id == question.id }
+        do {
+            try await client.rejectQuestion(requestID: question.id)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Permanently delete a single message from the current session.
+    func deleteMessage(_ messageID: String) async {
+        guard let client, let sid = selectedSessionID else { return }
+        let previous = messages
+        messages.removeAll { $0.id == messageID }
+        do {
+            try await client.deleteMessage(sessionID: sid, messageID: messageID)
+        } catch {
+            messages = previous
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// The most recent agent todo list across the conversation (from the last
+    /// `todowrite`/`todoread` tool part), or `[]` when none exist. Powers the
+    /// persistent todo panel in the Context tab.
+    var latestTodos: [JSONValue] {
+        for item in messages.reversed() {
+            for part in item.parts.reversed() where part.type == .tool {
+                guard let name = part.tool, name == "todowrite" || name == "todoread" else { continue }
+                if let todos = (part.state?.metadata?["todos"] ?? part.state?.input?["todos"])?.arrayValue,
+                   !todos.isEmpty {
+                    return todos
+                }
+            }
+        }
+        return []
+    }
+
     /// Best-effort model selection for a new prompt:
     /// 1. the user's explicit picker override, if set;
     /// 2. the session's last-used model, if any;
@@ -1149,7 +1204,16 @@ final class KorboStore: ObservableObject {
                     pendingPermissions.append(permission)
                 }
             }
-        case .sessionError, .questionAsked, .serverConnected:
+        case .questionAsked:
+            if let question = props.decode(OCQuestion.self) ?? props["info"]?.decode(OCQuestion.self) {
+                if !pendingQuestions.contains(where: { $0.id == question.id }) {
+                    pendingQuestions.append(question)
+                }
+            }
+        case .questionReplied, .questionRejected:
+            let rid = props["requestID"]?.stringValue ?? props["id"]?.stringValue
+            if let rid { pendingQuestions.removeAll { $0.id == rid } }
+        case .sessionError, .serverConnected:
             break // handled in later milestones
         case .fileEdited, .vcsBranchUpdated, .sessionDiff:
             // The working tree or branch changed — refresh the Git panel.

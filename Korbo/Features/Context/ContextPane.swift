@@ -42,6 +42,38 @@ struct ContextPane: View {
         }
     }
 
+    // MARK: Agent todos
+
+    @ViewBuilder
+    private var todoPanel: some View {
+        let todos = store.latestTodos
+        if todos.isEmpty {
+            EmptyView()
+        } else {
+            let completed = todos.filter { $0["status"]?.stringValue == "completed" }.count
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Agent todos")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer()
+                    Text("\(completed)/\(todos.count)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(todos.enumerated()), id: \.offset) { _, todo in
+                        ContextTodoRow(todo: todo)
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8).fill(Theme.bg)
+                )
+            }
+        }
+    }
+
     // MARK: Context tab (live)
 
     @ViewBuilder
@@ -49,6 +81,10 @@ struct ContextPane: View {
         if let session = store.selectedSession {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    todoPanel
+                    if !store.latestTodos.isEmpty {
+                        Divider().overlay(Theme.border)
+                    }
                     metricRow("Cost", value: session.cost.map { String(format: "$%.4f", $0) } ?? "—")
                     if let usage = store.latestUsage {
                         usageSection(usage)
@@ -188,5 +224,55 @@ struct ContextPane: View {
         }
         .frame(maxWidth: .infinity)
         .padding(24)
+    }
+}
+
+// MARK: - ContextTodoRow
+
+private struct ContextTodoRow: View {
+    let todo: JSONValue
+
+    private var status: String { todo["status"]?.stringValue ?? "pending" }
+    private var content: String { todo["content"]?.stringValue ?? "" }
+    private var priority: String? { todo["priority"]?.stringValue }
+
+    private var isDone: Bool { status == "completed" || status == "cancelled" }
+
+    private var glyph: String {
+        switch status {
+        case "completed": return "checkmark.circle.fill"
+        case "in_progress": return "circle.lefthalf.filled"
+        case "cancelled": return "xmark.circle"
+        default: return "circle"
+        }
+    }
+
+    private var glyphColor: Color {
+        switch status {
+        case "completed": return Theme.added
+        case "in_progress": return Theme.accent
+        default: return Theme.textTertiary
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: glyph)
+                .font(.system(size: 12))
+                .foregroundStyle(glyphColor)
+
+            Text(content)
+                .font(.system(size: 12))
+                .foregroundStyle(isDone ? Theme.textTertiary : Theme.textPrimary)
+                .strikethrough(isDone)
+
+            Spacer(minLength: 0)
+
+            if let priority, priority != "medium" {
+                Text(priority.uppercased())
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(priority == "high" ? Theme.removed : Theme.textTertiary)
+            }
+        }
     }
 }
