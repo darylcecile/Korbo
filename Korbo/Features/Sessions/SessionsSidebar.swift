@@ -449,9 +449,7 @@ struct SessionsSidebar: View {
         }
         .font(.system(size: 14))
         .foregroundStyle(Theme.textTertiary)
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 8)
+        .padding(16)
     }
 
     private var statusColor: Color {

@@ -410,7 +410,7 @@ struct ChatPane: View {
                     .allowsHitTesting(false)
             )
             .padding(.horizontal, 16)
-            .padding(.bottom, 4)
+            .padding(.bottom, 12)
             .padding(.top, 8)
         }
         .onChange(of: photoItems) { _, items in
