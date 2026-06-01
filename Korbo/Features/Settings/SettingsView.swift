@@ -101,11 +101,6 @@ struct SettingsView: View {
     @ViewBuilder
     private var githubSection: some View {
         Section {
-            TextField("OAuth App Client ID", text: $github.clientID)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled(true)
-                .font(.system(size: 13, design: .monospaced))
-
             if github.isSignedIn {
                 HStack(spacing: 10) {
                     Image(systemName: "person.crop.circle.fill")
@@ -132,13 +127,22 @@ struct SettingsView: View {
                 } label: {
                     Label("Sign in with GitHub", systemImage: "arrow.right.circle")
                 }
-                .disabled(github.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                          || github.deviceFlow != nil)
+                .disabled(github.deviceFlow != nil)
+
+                DisclosureGroup("Advanced") {
+                    TextField("Custom OAuth App Client ID", text: $github.clientID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .font(.system(size: 13, design: .monospaced))
+                    Text("Optional. Leave blank to use Korbo's built-in GitHub app. Set this only if you want to authorize against your own OAuth App (Device Flow must be enabled).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         } header: {
             Text("GitHub")
         } footer: {
-            Text("Create a GitHub OAuth App with **Device Flow enabled** and paste its Client ID here. The Client ID is a public identifier — not a secret. Korbo never asks for the client secret.")
+            Text("Sign in with GitHub to open and review pull requests. Korbo uses GitHub's secure device flow — it never sees your password and never asks for a client secret.")
         }
     }
 

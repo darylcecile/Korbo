@@ -37,9 +37,26 @@ final class GitHubStore: ObservableObject {
     private static let tokenAccount     = "github.oauth.token"
     private static let scope            = "repo"
 
+    /// Korbo's own GitHub OAuth App Client ID (Device Flow enabled). A Client ID
+    /// is a *public* identifier — not a secret — so it is safe to ship in the
+    /// app. Sign-in works out of the box; users never have to create or paste
+    /// their own. The optional `clientID` override below lets power users point
+    /// the integration at their own OAuth App instead.
+    static let bundledClientID = "Ov23ctv0KkkDNeQHKRUh"
+
     // MARK: Published state
+
+    /// Optional override for the bundled Client ID. Empty by default — when
+    /// empty the app uses `bundledClientID`. Exposed only for advanced users.
     @Published var clientID: String {
         didSet { UserDefaults.standard.set(clientID, forKey: Self.clientIDKey) }
+    }
+
+    /// The Client ID actually used for sign-in: the user's override when set,
+    /// otherwise Korbo's bundled Client ID.
+    var effectiveClientID: String {
+        let override = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return override.isEmpty ? Self.bundledClientID : override
     }
     @Published private(set) var authedUser: GHUser?
     @Published private(set) var isSignedIn: Bool = false
@@ -237,7 +254,7 @@ final class GitHubStore: ObservableObject {
     }
 
     func startDeviceFlow() async {
-        let id = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = effectiveClientID
         guard !id.isEmpty else { return }
         guard deviceFlow == nil else { return }
 
