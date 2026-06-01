@@ -36,7 +36,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 New session
 - [ ] P1 New worktree/branch session
 - [x] P0 Search/filter sessions
-- [ ] P2 Calendar/activity (by date)
+- [~] P2 Calendar/activity (by date) — recency grouping now emits fixed buckets (Today/Yesterday/Previous 7 days/Previous 30 days) and splits anything older into descending per-month sections ("April 2026" …) with a trailing "Older" fallback for date-less sessions (build-verified; month buckets not triggerable on-device without >30-day-old sessions). A true calendar/heatmap view is still pending
 - [x] P0 Context menu: rename
 - [x] P0 Context menu: delete (confirm)
 - [x] P0 Context menu: archive/unarchive
@@ -63,7 +63,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 **Todo** list rendering (todowrite/`todo.updated`)
 - [x] P0 **File/image attachments** inline (user + assistant)
 - [~] P1 Step / snapshot / patch / compaction parts — `compaction` renders as a centered "Context compacted" divider above the summary (verified on device, session `ses_1803cbd07…`); `patch`/`snapshot`/`subtask` render compact defensive markers (build-only — no live data on the server to trigger them); `step-start`/`step-finish` intentionally stay hidden (internal; token/cost already surfaced in footer + usage ring)
-- [ ] P0 Per‑message footer: tokens, cost, duration, timestamp
+- [x] P0 Per‑message footer: tokens, cost, duration, timestamp — assistant messages show duration, timestamp, compacted token count (k/M), and cost; cost is hidden when zero (e.g. Copilot reports $0); verified on device ("20k tok" shown)
 - [x] P0 Message actions: copy — context-menu Copy (long-press) on user + assistant messages, plus inline copy button in the assistant footer with a 1.2s checkmark confirmation; verified on device (clipboard round-trip)
 - [x] P1 Message actions: share, fork, revert/unrevert — share (ShareLink), "Fork from here" (POST `/session/{id}/fork` w/ `messageID`), and "Revert to here" (POST `/session/{id}/revert` `{messageID}`, destructive) in the per-message context menu; reverted messages stay in the list but dim to 0.45 opacity, with a top "Reverted — N messages hidden · Undo" banner whose Undo calls POST `/session/{id}/unrevert`; verified on device
 - [x] P1 Message actions: delete — destructive "Delete message" (trash) in the per-message context menu opens a "Delete this message?" confirmation dialog; confirm calls DELETE `/session/{id}/message/{messageID}` with optimistic local removal + rollback on error; verified on device (menu + confirmation dialog)
@@ -155,7 +155,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 ## 8. Settings — M6 delivered (SettingsView + ChatPane pickers)
 - [x] P0 **Connection / Remote instances**: add/edit/remove server, auth, verify, switch — Connection section + "Change server…" → ConnectionSheet (multi-server, keychain)
 - [x] P0 Providers & API keys (add/verify/remove, masked) — connected-first list + "All providers (N)" disclosure; ⋯ menu → Add/Replace key (SecureField) `PUT /auth/{id}` + Remove `DELETE /auth/{id}`. NOTE: opencode's `connected` reflects genuinely usable providers, so a bogus key won't flip the badge (verified at API-contract level).
-- [ ] P1 Provider OAuth flows — deferred (needs `POST /provider/{id}/oauth/authorize|callback` device-flow UI)
+- [~] P1 Provider OAuth flows — `ProviderOAuthSheet` drives `GET /provider/auth` → conditional prompts → `POST /provider/{id}/oauth/authorize` → device-code/auto-poll `POST /oauth/callback`, wired into the provider row menu. Verified live to the device-code stage (GitHub Copilot: deployment-type picker, real code "1B04-BA3A", Safari opened to github.com/login/device, polling state shown) — full end-to-end login not completed on-device (no real credentials entered)
 - [x] P0 Default model / default agent — ChatPane header `modelMenu` (Auto + per-connected-provider model sections, checkmarks) + `agentMenu` (build/plan, hidden+subagent filtered); persisted to UserDefaults; sent per-prompt as `model`/`agent`
 - [ ] P1 Models: favourites + cycling — deferred (not API-backed)
 - [ ] P1 Agents: list/create/edit/delete (model, prompt, tools, effort) — read-only catalogue delivered (name + primary/subagent badge + description); create/edit/delete deferred (opencode configures agents via config file, no REST CRUD)
