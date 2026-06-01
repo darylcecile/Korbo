@@ -197,7 +197,8 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 
 ## 11. iPad‑native & platform
 - [x] P0 iPad‑only target, landscape + portrait — XcodeGen target is iPad-only and the adaptive shell supports landscape + portrait; verified on device
-- [ ] P1 Local notifications (permission/question/idle/error)
+- [x] P1 Local notifications (permission/question/idle/error) — `NotificationManager` fires local notifications when the app is backgrounded for permission/question prompts, run finish, and run errors, with a ~30s `UIBackgroundTask` grace window so short runs finishing just after backgrounding still deliver; permission prompt + delivery verified on device. Caveat: opencode has no server-side push, so delivery for *long* runs is bounded by iOS suspending the in-app SSE stream once backgrounded
+- [x] P1 Live Activity (lock-screen run status) — WidgetKit extension (`KorboWidgets`) renders an ActivityKit lock-screen card with the active run's session title, status glyph and a live timer, plus a finished state; orphan cleanup via stale-dating, `endStaleOnLaunch()` and a foreground reconcile. Verified rendering on the iPad lock screen (working + finished). Note: iPadOS has no Dynamic Island hardware, so the island regions render on iPhone only
 - [x] P1 Hardware keyboard shortcuts — global ⌘-shortcuts via `GlobalShortcuts` (palette, panel toggles, tab switches, new session, focus composer, settings, send)
 - [x] P1 Split View / Stage Manager friendliness — width-driven adaptive 3/2/1-pane shell with auto-collapsing side panels + overlay drawers
 - [x] P1 Share sheet (share session/diff/output) — session context menu "Share link" shares the opencode share URL via the native iOS share sheet (`UIActivityViewController` wrapped in `ActivityView`, presented with an `Identifiable` `ShareURLItem`); verified on device (rich link preview, Copy/More)
