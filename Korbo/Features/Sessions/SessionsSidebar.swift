@@ -12,13 +12,22 @@ struct SessionsSidebar: View {
     @State private var deleteTarget: OCSession?
     @State private var shareURL: String?
 
+    // Multi-select state
+    @State private var isSelectMode = false
+    @State private var selectedIDs: Set<String> = []
+    @State private var showBulkDeleteConfirm = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar
             if showSearch { searchField }
             content
             Spacer(minLength: 0)
-            footer
+            if isSelectMode {
+                bulkActionBar
+            } else {
+                footer
+            }
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
@@ -57,6 +66,18 @@ struct SessionsSidebar: View {
         } message: {
             Text(shareURL ?? "")
         }
+        .confirmationDialog(
+            "Delete \(selectedIDs.count) session\(selectedIDs.count == 1 ? "" : "s")?",
+            isPresented: $showBulkDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await bulkDelete() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently remove the selected sessions.")
+        }
     }
 
     private var shareBinding: Binding<Bool> {
@@ -74,35 +95,60 @@ struct SessionsSidebar: View {
 
     private var toolbar: some View {
         HStack(spacing: 16) {
-            Button {
-                Task { await store.createSession() }
-            } label: { Image(systemName: "square.and.pencil") }
+            if isSelectMode {
+                Button("Done") { exitSelectMode() }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                Spacer()
+                Text("\(selectedIDs.count) selected")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Button { selectAllVisible() } label: {
+                    Text(allVisibleSelected ? "Deselect All" : "Select All")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(Theme.accent)
+            } else {
+                Button {
+                    Task { await store.createSession() }
+                } label: { Image(systemName: "square.and.pencil") }
+                    .buttonStyle(.plain)
+                    .disabled(!store.status.isConnected)
+                Spacer()
+                Button {
+                    Task { await store.reloadSessions() }
+                } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.plain)
+                    .disabled(!store.status.isConnected)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { app.toggleTerminal() }
+                } label: {
+                    Image(systemName: "terminal")
+                }
                 .buttonStyle(.plain)
+                .foregroundStyle(app.showTerminal ? Theme.accent : Theme.textSecondary)
                 .disabled(!store.status.isConnected)
-            Spacer()
-            Button {
-                Task { await store.reloadSessions() }
-            } label: { Image(systemName: "arrow.clockwise") }
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { showSearch.toggle() }
+                    if !showSearch { store.sessionQuery = "" }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
                 .buttonStyle(.plain)
+                .foregroundStyle(showSearch ? Theme.accent : Theme.textSecondary)
                 .disabled(!store.status.isConnected)
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { app.toggleTerminal() }
-            } label: {
-                Image(systemName: "terminal")
+                groupSortMenu
+                // Select mode toggle
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { isSelectMode = true }
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.textSecondary)
+                .disabled(!store.status.isConnected || store.sessions.isEmpty)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(app.showTerminal ? Theme.accent : Theme.textSecondary)
-            .disabled(!store.status.isConnected)
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showSearch.toggle() }
-                if !showSearch { store.sessionQuery = "" }
-            } label: {
-                Image(systemName: "magnifyingglass")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(showSearch ? Theme.accent : Theme.textSecondary)
-            .disabled(!store.status.isConnected)
-            groupSortMenu
         }
         .font(.system(size: 15, weight: .medium))
         .foregroundStyle(Theme.textSecondary)
@@ -213,47 +259,59 @@ struct SessionsSidebar: View {
         let selected = store.selectedSessionID == session.id
         let active = store.activeSessionIDs.contains(session.id)
         let pinned = store.isPinned(session.id)
+        let isChecked = selectedIDs.contains(session.id)
         return Button {
-            Task { await store.selectSession(session.id) }
-            app.showChat()
-            if app.layoutMode.isCompact { app.sessionsDrawerOpen = false }
+            if isSelectMode {
+                toggleSelection(session.id)
+            } else {
+                Task { await store.selectSession(session.id) }
+                app.showChat()
+                if app.layoutMode.isCompact { app.sessionsDrawerOpen = false }
+            }
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    if active {
-                        Circle().fill(Theme.accent).frame(width: 6, height: 6)
-                    }
-                    Text(session.title ?? "Untitled session")
-                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                        .lineLimit(1)
-                        .foregroundStyle(selected ? Theme.accent : Theme.textPrimary)
-                    if pinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 9))
+            HStack(spacing: 8) {
+                if isSelectMode {
+                    Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(isChecked ? Theme.accent : Theme.textTertiary)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        if active {
+                            Circle().fill(Theme.accent).frame(width: 6, height: 6)
+                        }
+                        Text(session.title ?? "Untitled session")
+                            .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                            .lineLimit(1)
+                            .foregroundStyle(selected ? Theme.accent : Theme.textPrimary)
+                        if pinned {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        if session.isShared {
+                            Image(systemName: "link")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.accent)
+                        }
+                        Spacer(minLength: 8)
+                        Text(RelativeTime.short(session.lastActivity))
+                            .font(.system(size: 11))
                             .foregroundStyle(Theme.textTertiary)
                     }
-                    if session.isShared {
-                        Image(systemName: "link")
-                            .font(.system(size: 9))
-                            .foregroundStyle(Theme.accent)
-                    }
-                    Spacer(minLength: 8)
-                    Text(RelativeTime.short(session.lastActivity))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
+                    metaRow(session)
                 }
-                metaRow(session)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(selected ? Theme.panelRaised : .clear)
+                    .fill((selected && !isSelectMode) ? Theme.panelRaised : (isChecked ? Theme.accent.opacity(0.1) : .clear))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu { rowMenu(session) }
+        .contextMenu { if !isSelectMode { rowMenu(session) } }
     }
 
     @ViewBuilder
@@ -426,5 +484,114 @@ struct SessionsSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Multi-Select Helpers
+
+    private var allVisibleIDs: Set<String> {
+        Set(store.sessionGroups.flatMap { $0.sessions.map(\.id) })
+    }
+
+    private var allVisibleSelected: Bool {
+        let visible = allVisibleIDs
+        return !visible.isEmpty && visible.isSubset(of: selectedIDs)
+    }
+
+    private func toggleSelection(_ id: String) {
+        if selectedIDs.contains(id) {
+            selectedIDs.remove(id)
+        } else {
+            selectedIDs.insert(id)
+        }
+    }
+
+    private func selectAllVisible() {
+        let visible = allVisibleIDs
+        if allVisibleSelected {
+            selectedIDs.subtract(visible)
+        } else {
+            selectedIDs.formUnion(visible)
+        }
+    }
+
+    private func exitSelectMode() {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            isSelectMode = false
+            selectedIDs.removeAll()
+        }
+    }
+
+    // MARK: - Bulk Action Bar
+
+    private var bulkActionBar: some View {
+        HStack(spacing: 0) {
+            bulkActionButton(icon: "pin", label: bulkPinLabel) {
+                bulkTogglePin()
+            }
+            bulkActionButton(icon: "archivebox", label: bulkArchiveLabel) {
+                Task { await bulkToggleArchive() }
+            }
+            bulkActionButton(icon: "trash", label: "Delete", destructive: true) {
+                showBulkDeleteConfirm = true
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .background(Theme.panelRaised)
+        .disabled(selectedIDs.isEmpty)
+        .opacity(selectedIDs.isEmpty ? 0.5 : 1)
+    }
+
+    private func bulkActionButton(icon: String, label: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .foregroundStyle(destructive ? Theme.removed : Theme.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Returns "Pin" if majority are unpinned, else "Unpin"
+    private var bulkPinLabel: String {
+        let pinnedCount = selectedIDs.filter { store.isPinned($0) }.count
+        return pinnedCount > selectedIDs.count / 2 ? "Unpin" : "Pin"
+    }
+
+    // Returns "Archive" if majority are unarchived, else "Unarchive"
+    private var bulkArchiveLabel: String {
+        let archivedCount = selectedIDs.filter { id in
+            store.sessions.first { $0.id == id }?.isArchived == true
+        }.count
+        return archivedCount > selectedIDs.count / 2 ? "Unarchive" : "Archive"
+    }
+
+    // MARK: - Bulk Actions (reuse single-session store methods)
+
+    private func bulkTogglePin() {
+        let shouldPin = bulkPinLabel == "Pin"
+        for id in selectedIDs {
+            store.setPinned(id, pinned: shouldPin)
+        }
+        exitSelectMode()
+    }
+
+    private func bulkToggleArchive() async {
+        let shouldArchive = bulkArchiveLabel == "Archive"
+        for id in selectedIDs {
+            await store.setSessionArchived(id, archived: shouldArchive)
+        }
+        exitSelectMode()
+    }
+
+    private func bulkDelete() async {
+        for id in selectedIDs {
+            await store.deleteSession(id)
+        }
+        exitSelectMode()
     }
 }

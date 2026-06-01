@@ -43,7 +43,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Context menu: fork/duplicate — `forkSession` (POST `/session` w/ `parentID`), "Duplicate" context item; verified on device
 - [x] P1 Context menu: share (link) / unshare — `shareSession`/`unshareSession`, "Share"/"Copy link"/"Stop sharing" context items; verified on device
 - [x] P1 Context menu: pin/unpin — client-local `pinnedSessionIDs` (UserDefaults), `.pinned` bucket renders a "Pinned" group first, pin glyph on rows
-- [ ] P2 Multi‑select + bulk actions (archive/delete/pin)
+- [x] P2 Multi‑select + bulk actions (archive/delete/pin) — toolbar "Select" mode toggle, per‑row selection circles, "N selected" + "Select All"/"Done", bottom bulk bar (Pin/Unpin, Archive/Unarchive, Delete) reusing `setPinned`/`setSessionArchived`/`deleteSession`, delete confirmationDialog; verified on device
 - [x] P2 Sort options + project grouping — `SessionGrouping` (recency/project) + `SessionSort` (updated/created/title) menu, persisted; verified on device
 
 ## 3. Conversation view (center)
@@ -92,8 +92,8 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Reasoning‑effort selector
 - [x] P0 Agent/mode selector (Build/Plan/…) — agent/mode picker in the composer footer (moved out of header); verified on device
 - [ ] P1 Draft persistence per session
-- [ ] P2 Draft preset chips / starters
-- [ ] P2 Expand/focus‑mode input
+- [x] P2 Draft preset chips / starters — starter pill chips (Explain codebase, Find & fix a bug, Write unit tests, Review recent changes, Refactor, Add docs) shown when draft empty + no messages; tap prefills + focuses composer, auto‑hides on input; verified on device
+- [x] P2 Expand/focus‑mode input — "Enter Full Screen" button opens a `.sheet` "Compose" editor (`TextEditor` bound to same draft, Done collapses keeping text, Send routes through `send()`); draft syncs bidirectionally; verified on device
 - [ ] P2 Pencil scribble input
 
 ## 5. Git tab (right)

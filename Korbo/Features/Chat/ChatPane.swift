@@ -9,7 +9,18 @@ struct ChatPane: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showFileImporter = false
     @State private var isPinnedToBottom = true
+    @State private var isExpandedComposer = false
     @FocusState private var composerFocused: Bool
+
+    // Starter chips shown when composer is empty and no messages exist.
+    private let starters = [
+        "Explain this codebase",
+        "Find and fix a bug",
+        "Write unit tests",
+        "Review my recent changes",
+        "Refactor for readability",
+        "Add documentation"
+    ]
 
     // Composer autocomplete (`@` files/agents, `/` commands).
     @State private var suggestions: [ComposerSuggestion] = []
@@ -257,12 +268,42 @@ struct ChatPane: View {
 
     // MARK: Composer
 
+    /// Show starter chips only when draft is empty AND no messages in the current session.
+    private var shouldShowStarters: Bool {
+        app.composerDraft.trimmingCharacters(in: .whitespaces).isEmpty && store.messages.isEmpty && canSend
+    }
+
+    private var starterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(starters, id: \.self) { starter in
+                    Button {
+                        app.composerDraft = starter
+                        composerFocused = true
+                    } label: {
+                        Text(starter)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 16).fill(Theme.panel))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     private var composer: some View {
         VStack(spacing: 0) {
             Divider().overlay(Theme.border)
             VStack(alignment: .leading, spacing: 10) {
                 if !suggestions.isEmpty {
                     suggestionList
+                }
+                if shouldShowStarters {
+                    starterChips
                 }
                 if !attachments.isEmpty {
                     attachmentStrip
@@ -294,6 +335,11 @@ struct ChatPane: View {
                     .disabled(!canSend)
                     Button { showFileImporter = true } label: {
                         Image(systemName: "paperclip")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    Button { isExpandedComposer = true } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
@@ -334,6 +380,17 @@ struct ChatPane: View {
                       allowedContentTypes: [.item],
                       allowsMultipleSelection: true) { result in
             if case let .success(urls) = result { loadFiles(urls) }
+        }
+        .sheet(isPresented: $isExpandedComposer) {
+            ExpandedComposerSheet(
+                draft: $app.composerDraft,
+                canSubmit: canSubmit,
+                onSend: {
+                    send()
+                    isExpandedComposer = false
+                },
+                onDismiss: { isExpandedComposer = false }
+            )
         }
     }
 
@@ -702,5 +759,49 @@ private struct PermissionCard: View {
                 .foregroundStyle(tint)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Full-screen focus editor for composing long prompts.
+private struct ExpandedComposerSheet: View {
+    @Binding var draft: String
+    let canSubmit: Bool
+    let onSend: () -> Void
+    let onDismiss: () -> Void
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    TextEditor(text: $draft)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Theme.textPrimary)
+                        .scrollContentBackground(.hidden)
+                        .padding(16)
+                        .focused($isFocused)
+                }
+            }
+            .navigationTitle("Compose")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { onDismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        onSend()
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                            .foregroundStyle(canSubmit ? Theme.accent : Theme.textTertiary)
+                    }
+                    .disabled(!canSubmit)
+                }
+            }
+            .toolbarBackground(Theme.panelRaised, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+        }
+        .onAppear { isFocused = true }
     }
 }
