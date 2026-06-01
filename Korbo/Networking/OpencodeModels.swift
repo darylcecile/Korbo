@@ -97,6 +97,30 @@ struct OCMessage: Codable, Identifiable, Hashable {
     var mode: String?               // assistant message
     var cost: Double?
     var error: OCMessageError?
+    var tokens: Usage?
+
+    /// Token accounting carried on an assistant message. `total` already includes
+    /// input + output + reasoning + cache, i.e. the context the model processed
+    /// for that turn (the basis for the context-window usage bar).
+    struct Usage: Codable, Hashable {
+        var total: Double?
+        var input: Double?
+        var output: Double?
+        var reasoning: Double?
+        var cache: Cache?
+
+        struct Cache: Codable, Hashable {
+            var read: Double?
+            var write: Double?
+        }
+
+        /// Cached tokens (read + write) surfaced as one bucket for the bar.
+        var cacheTotal: Double { (cache?.read ?? 0) + (cache?.write ?? 0) }
+        /// Best-effort total even if the server omits the precomputed field.
+        var resolvedTotal: Double {
+            total ?? ((input ?? 0) + (output ?? 0) + (reasoning ?? 0) + cacheTotal)
+        }
+    }
 
     struct Time: Codable, Hashable {
         var created: Double?
@@ -234,6 +258,13 @@ struct OCModel: Codable, Identifiable, Hashable {
     let id: String
     var name: String?
     var providerID: String?
+    var limit: Limit?
+
+    /// Model context/output token limits (from models.dev via `/provider`).
+    struct Limit: Codable, Hashable {
+        var context: Double?
+        var output: Double?
+    }
 }
 
 struct OCAgent: Codable, Identifiable, Hashable {

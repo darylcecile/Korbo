@@ -307,6 +307,29 @@ final class KorboStore: ObservableObject {
         return "Auto"
     }
 
+    /// Token usage for the most recent assistant turn in the selected session.
+    /// This reflects the live context-window footprint (input + cache + output).
+    var latestUsage: OCMessage.Usage? {
+        messages.last { $0.info.role == .assistant && ($0.info.tokens?.resolvedTotal ?? 0) > 0 }?
+            .info.tokens
+    }
+
+    /// Context-window size (in tokens) of the model behind the latest assistant
+    /// turn, falling back to the effective model. `nil` when unknown.
+    var contextLimit: Int? {
+        let ref: OCModelRef?
+        if let last = messages.last(where: { $0.info.role == .assistant && $0.info.modelID != nil }),
+           let pid = last.info.providerID, let mid = last.info.modelID {
+            ref = OCModelRef(providerID: pid, modelID: mid)
+        } else {
+            ref = resolveModel()
+        }
+        guard let ref,
+              let limit = providers?.all.first(where: { $0.id == ref.providerID })?
+                .models?[ref.modelID]?.limit?.context, limit > 0 else { return nil }
+        return Int(limit)
+    }
+
     /// The agent name to send with a prompt: the explicit override if still valid,
     /// else the first selectable agent the server reports.
     func resolveAgent() -> String? {

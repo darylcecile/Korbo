@@ -140,8 +140,8 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 
 ## 7. Context tab (right)
 - [ ] P1 Context items list (files/attachments/agents/skills) w/ token counts
-- [ ] P1 Token‑usage breakdown (system/history/files/total) + bar
-- [ ] P1 Context‑limit warning
+- [x] P1 Token‑usage breakdown (input/cache/output/reasoning) + bar — proportional segmented bar + per-bucket legend from the latest assistant turn's `tokens`; verified on device
+- [x] P1 Context‑limit warning — total vs model `limit.context` with % and an amber warning at ≥80%; verified on device (200K window resolved)
 - [ ] P1 Remove item from context / view file
 - [ ] P2 Context modes/tabs (diff/file/context/plan/preview/browser)
 - [ ] P2 Plan editor; project notes & todo panel
