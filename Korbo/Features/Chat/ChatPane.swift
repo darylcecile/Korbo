@@ -46,7 +46,9 @@ struct ChatPane: View {
             header
             Divider().overlay(Theme.border)
             messages
-            composer
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    composer
+                }
         }
         .background(Theme.bg)
     }
@@ -308,7 +310,6 @@ struct ChatPane: View {
 
     private var composer: some View {
         VStack(spacing: 0) {
-            Divider().overlay(Theme.border)
             VStack(alignment: .leading, spacing: 10) {
                 if !suggestions.isEmpty {
                     suggestionList
@@ -395,9 +396,14 @@ struct ChatPane: View {
                 .foregroundStyle(Theme.textSecondary)
             }
             .padding(16)
-            .background(Theme.panelRaised)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .padding(16)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Theme.border.opacity(0.5), lineWidth: 0.5)
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .padding(.top, 8)
         }
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
