@@ -206,6 +206,14 @@ struct MessageView: View {
                     Text(completed, style: .time)
                 }
             }
+            if let tokens = tokenSummary {
+                Label(tokens, systemImage: "number")
+                    .accessibilityLabel("\(tokens)")
+            }
+            if let cost = costSummary {
+                Label(cost, systemImage: "dollarsign.circle")
+                    .accessibilityLabel("Cost \(cost)")
+            }
             // TTS read-aloud and copy buttons: only show if there's visible text
             if !visibleTextContent.isEmpty {
                 Spacer()
@@ -240,6 +248,34 @@ struct MessageView: View {
     }
 
     // MARK: Helpers
+
+    /// Compact total-token label for the assistant footer (e.g. "12.3k tok"),
+    /// or nil when there is no usage data. `resolvedTotal` already folds in
+    /// input + output + reasoning + cache.
+    private var tokenSummary: String? {
+        guard let t = item.info.tokens else { return nil }
+        let total = t.resolvedTotal
+        guard total > 0 else { return nil }
+        return Self.compactTokens(total)
+    }
+
+    /// Per-message cost in USD (e.g. "$0.0123"), or nil when zero/absent.
+    private var costSummary: String? {
+        guard let c = item.info.cost, c > 0 else { return nil }
+        return c < 0.01 ? String(format: "$%.4f", c) : String(format: "$%.2f", c)
+    }
+
+    static func compactTokens(_ n: Double) -> String {
+        switch n {
+        case ..<1000:
+            return "\(Int(n)) tok"
+        case ..<1_000_000:
+            let k = n / 1000
+            return String(format: k < 10 ? "%.1fk tok" : "%.0fk tok", k)
+        default:
+            return String(format: "%.1fM tok", n / 1_000_000)
+        }
+    }
 
     private var textParts: [OCPart] { item.parts.filter { $0.type == .text && !($0.text ?? "").isEmpty } }
     private var fileParts: [OCPart] { item.parts.filter { $0.type == .file } }
