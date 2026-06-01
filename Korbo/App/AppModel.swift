@@ -9,11 +9,16 @@ final class AppModel: ObservableObject {
     @Published var showConnectionSheet = false
     @Published var showSettingsSheet = false
 
-    /// When true the middle column shows the terminal instead of the chat. The
-    /// terminal lives in the wide centre pane (toggled from the sessions toolbar)
-    /// so it gets real width — and the right sidebar can still be collapsed to
-    /// widen it further.
-    @Published var showTerminal = false
+    /// Which view occupies the wide center column. The terminal and file viewer
+    /// both live in the centre pane (toggled from toolbar/actions) so they get
+    /// real width — and the right sidebar can still be collapsed to widen them.
+    @Published var centerPane: CenterPane = .chat
+
+    /// Computed bool for backward compatibility with existing terminal checks.
+    var showTerminal: Bool { centerPane == .terminal }
+
+    /// Computed bool: true when the file viewer is in the center pane.
+    var showFileViewer: Bool { centerPane == .files }
 
     /// Command palette (⌘P / ⌘K) overlay.
     @Published var showCommandPalette = false
@@ -68,7 +73,11 @@ final class AppModel: ObservableObject {
     }
 
     func toggleCommandPalette() { showCommandPalette.toggle() }
-    func toggleTerminal() { showTerminal.toggle() }
+    func toggleTerminal() {
+        centerPane = centerPane == .terminal ? .chat : .terminal
+    }
+    func showFilesCenter() { centerPane = .files }
+    func showChat() { centerPane = .chat }
     func focusComposer() { focusComposerToken &+= 1 }
     func toggleSessionsDrawer() { sessionsDrawerOpen.toggle() }
 
@@ -119,6 +128,11 @@ final class AppModel: ObservableObject {
             case .context: return "doc.text.magnifyingglass"
             }
         }
+    }
+
+    /// Which pane is shown in the wide centre column.
+    enum CenterPane {
+        case chat, terminal, files
     }
 }
 

@@ -39,8 +39,6 @@ struct ChatPane: View {
                 }
                 .buttonStyle(.plain)
             }
-            modelMenu
-            agentMenu
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(session?.title ?? "New session")
@@ -272,9 +270,17 @@ struct ChatPane: View {
                 TextField("@ for files/agents;  / for commands;  ! for shell", text: $app.composerDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
-                    .lineLimit(1...6)
+                    .lineLimit(1...10)
                     .disabled(!canSend)
                     .focused($composerFocused)
+                    .onKeyPress(.return, phases: .down) { keyPress in
+                        // Shift+Enter inserts newline (default behavior); plain Enter sends.
+                        if keyPress.modifiers.contains(.shift) {
+                            return .ignored
+                        }
+                        if canSubmit { send() }
+                        return .handled
+                    }
                     .onChange(of: app.composerDraft) { _, text in
                         updateSuggestions(for: text)
                     }
@@ -292,7 +298,8 @@ struct ChatPane: View {
                     .buttonStyle(.plain)
                     .disabled(!canSend)
                     Spacer()
-                    Text(store.effectiveModelLabel).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    modelMenu
+                    agentMenu
                     if store.isGenerating {
                         Button { Task { await store.abort() } } label: {
                             Image(systemName: "stop.fill").foregroundStyle(Theme.removed)

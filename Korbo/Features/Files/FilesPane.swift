@@ -2,20 +2,15 @@ import SwiftUI
 
 /// Right-pane **Files** tab. opencode's server exposes a read-only file surface
 /// (`/file`, `/file/content`, `/find/file`), so this panel is a lazy, collapsible
-/// workspace browser with fuzzy path search and a line-numbered viewer. Editing,
-/// creating and deleting files aren't in the opencode REST API and are deferred.
+/// workspace browser with fuzzy path search. The file viewer now lives in the
+/// wide centre pane (like the terminal) for better readability.
 struct FilesPane: View {
+    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
 
     var body: some View {
-        Group {
-            if store.activeFilePath != nil {
-                FileViewer()
-            } else {
-                browser
-            }
-        }
-        .task { await store.loadFileRootIfNeeded() }
+        browser
+            .task { await store.loadFileRootIfNeeded() }
     }
 
     // MARK: Browser (search + tree)
@@ -95,7 +90,7 @@ struct FilesPane: View {
         return Button {
             Task {
                 if node.isDirectory { await store.toggleDir(node) }
-                else { await store.openFile(node.path) }
+                else { await openFileInCenter(node.path) }
             }
         } label: {
             HStack(spacing: 6) {
@@ -149,7 +144,7 @@ struct FilesPane: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(store.fileSearchResults, id: \.self) { path in
-                        Button { Task { await store.openFile(path) } } label: {
+                        Button { Task { await openFileInCenter(path) } } label: {
                             resultRow(path)
                         }
                         .buttonStyle(.plain)
@@ -187,6 +182,12 @@ struct FilesPane: View {
     }
 
     // MARK: Helpers
+
+    /// Open a file and switch the center pane to the file viewer.
+    private func openFileInCenter(_ path: String) async {
+        await store.openFile(path)
+        app.showFilesCenter()
+    }
 
     private func centeredState<C: View>(@ViewBuilder _ content: () -> C) -> some View {
         VStack(spacing: 10) { Spacer(); content(); Spacer() }
@@ -244,11 +245,13 @@ private struct FileRow: Identifiable {
 
 // MARK: - File viewer (read-only, tabbed, syntax-highlighted)
 
-private struct FindMatch: Equatable { let line: Int; let occ: Int }
+struct FindMatch: Equatable { let line: Int; let occ: Int }
 
 /// Read-only viewer with a tab strip, syntax highlighting, find and go-to-line.
 /// Editing is not part of the opencode REST API, so this stays read-only.
-private struct FileViewer: View {
+/// Now lives in the centre pane for better width; the back button returns to chat.
+struct FileViewer: View {
+    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
 
     private static let maxLines = 2000
@@ -282,6 +285,9 @@ private struct FileViewer: View {
         .onChange(of: store.activeFilePath) { _ in resetFind(); refreshHighlight() }
         .onChange(of: activeKey) { _ in refreshHighlight() }
         .onChange(of: findQuery) { _ in recomputeMatches() }
+        .onChange(of: store.openFiles.isEmpty) { empty in
+            if empty { returnToChat() }
+        }
         .onAppear { refreshHighlight() }
     }
 
@@ -289,13 +295,13 @@ private struct FileViewer: View {
 
     private var tabStrip: some View {
         HStack(spacing: 6) {
-            Button { store.activeFilePath = nil } label: {
+            Button { returnToChat() } label: {
                 Image(systemName: "sidebar.left")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
             }
             .buttonStyle(.plain)
-            .help("Show file browser")
+            .help("Return to chat and show file browser")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -308,6 +314,11 @@ private struct FileViewer: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
+    }
+
+    private func returnToChat() {
+        app.showChat()
+        app.showRightTab(.files)
     }
 
     private func tab(_ file: OpenFile) -> some View {
@@ -569,5 +580,57 @@ private struct FileViewer: View {
 
     private func resetFind() {
         findQuery = ""; matches = []; current = 0; gotoText = ""
+    }
+}
+
+
+// MARK: - Center pane wrapper
+
+/// Wide centre-pane file viewer. If no file is open, shows an empty state and
+/// the user can return to chat; otherwise displays the full FileViewer.
+struct FileViewerPane: View {
+    @EnvironmentObject private var app: AppModel
+    @EnvironmentObject private var store: KorboStore
+
+    var body: some View {
+        Group {
+            if store.activeFilePath != nil {
+                FileViewer()
+            } else {
+                emptyState
+            }
+        }
+        .background(Theme.bg)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "doc.text")
+                .font(.system(size: 40))
+                .foregroundStyle(Theme.textTertiary)
+            Text("No file open")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            Text("Open a file from the Files tab to view it here.")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
+            Button {
+                app.showChat()
+                app.showRightTab(.files)
+            } label: {
+                Text("Return to chat")
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.accent.opacity(0.18)))
+                    .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
     }
 }

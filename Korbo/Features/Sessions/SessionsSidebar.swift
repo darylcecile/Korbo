@@ -215,7 +215,7 @@ struct SessionsSidebar: View {
         let pinned = store.isPinned(session.id)
         return Button {
             Task { await store.selectSession(session.id) }
-            app.showTerminal = false
+            app.showChat()
             if app.layoutMode.isCompact { app.sessionsDrawerOpen = false }
         } label: {
             VStack(alignment: .leading, spacing: 3) {

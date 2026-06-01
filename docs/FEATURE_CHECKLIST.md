@@ -77,20 +77,20 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P2 Inline code comments / drafts
 
 ## 4. Composer
-- [ ] P0 Multiline auto‑growing input
-- [ ] P0 Placeholder "@ for files/agents; / for commands; ! for shell"
+- [x] P0 Multiline auto‑growing input — `TextField(axis:.vertical)` `lineLimit(1...10)`; Enter sends, Shift+Enter inserts newline (`.onKeyPress(.return)`); verified on device (grew to 3 lines)
+- [x] P0 Placeholder "@ for files/agents; / for commands; ! for shell"
 - [x] P0 Send (⌘↵) and Stop states — composer send button bound to ⌘↵; Stop (⌘.) aborts while generating
 - [x] P0 `@` mention autocomplete: files — debounced fuzzy file search → attachment chip on select; verified on device
 - [x] P1 `@` mention autocomplete: agents — `selectableAgents` (`@build`/`@plan`); verified on device
 - [x] P1 `/` command/skill autocomplete — first-token `/` filters `store.commands`, inserts `/name `; verified on device
-- [ ] P1 `!` shell prefix routing
+- [x] P1 `!` shell prefix routing — verified on device
 - [x] P0 Attach file (document picker)
 - [x] P0 Attach image (photo picker) + preview
 - [ ] P1 Paste image; drag‑drop files
 - [x] P1 Attachment chips (remove, size/path)
-- [ ] P0 Model selector
+- [x] P0 Model selector — interactive model picker in the composer footer (moved out of header); verified on device (round-trips selection)
 - [ ] P1 Reasoning‑effort selector
-- [ ] P0 Agent/mode selector (Build/Plan/…)
+- [x] P0 Agent/mode selector (Build/Plan/…) — agent/mode picker in the composer footer (moved out of header); verified on device
 - [ ] P1 Draft persistence per session
 - [ ] P2 Draft preset chips / starters
 - [ ] P2 Expand/focus‑mode input
@@ -129,7 +129,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 ## 6. Files tab (right)
 - [x] P1 File tree (hierarchical, collapsible, filetype icons) — lazy `GET /file?path=`, ignored-file dimming
 - [x] P1 File search/filter — fuzzy `GET /find/file?query=`, flat results w/ subpaths
-- [x] P1 File viewer with line numbers — read-only monospaced, binary notice, large-file cap
+- [x] P1 File viewer with line numbers — read-only monospaced, binary notice, large-file cap; opens in the **wide centre column** (like the terminal) so it gets full width and can be widened by collapsing the right sidebar; browser stays in the right Files tab; verified on device
 - [ ] ~~P1 Context menu: open / new file / new folder / rename / delete~~ — deferred: opencode file API is **read-only** (no write/create/rename/delete endpoint)
 - [ ] ~~P1 File editor (edit + save)~~ — deferred: no write API (agent edits files via tools, not REST)
 - [ ] ~~P1 **Autosave vs manual‑save toggle** + dirty indicator + ⌘S~~ — deferred: no write API

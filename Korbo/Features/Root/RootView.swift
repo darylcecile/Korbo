@@ -54,9 +54,12 @@ struct RootView: View {
             }
 
             Group {
-                if app.showTerminal {
+                switch app.centerPane {
+                case .terminal:
                     TerminalPane()
-                } else {
+                case .files:
+                    FileViewerPane()
+                case .chat:
                     ChatPane()
                 }
             }
