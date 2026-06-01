@@ -362,7 +362,7 @@ struct ChatPane: View {
                     } label: {
                         Image(systemName: speech.isDictating ? "mic.fill" : "plus")
                             .foregroundStyle(speech.isDictating ? Theme.removed : Theme.textSecondary)
-                            .frame(width: 32, height: 32)
+                            .frame(width: 30, height: 30)
                             .contentShape(Rectangle())
                     }
                     .menuStyle(.borderlessButton)
@@ -372,7 +372,7 @@ struct ChatPane: View {
 
                     Button { isExpandedComposer = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .frame(width: 32, height: 32)
+                            .frame(width: 30, height: 30)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -399,7 +399,9 @@ struct ChatPane: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
