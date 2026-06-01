@@ -362,14 +362,18 @@ struct ChatPane: View {
                     } label: {
                         Image(systemName: speech.isDictating ? "mic.fill" : "plus")
                             .foregroundStyle(speech.isDictating ? Theme.removed : Theme.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
                     }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .disabled(!canSend)
                     .accessibilityLabel("Add attachment")
 
                     Button { isExpandedComposer = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
@@ -400,6 +404,7 @@ struct ChatPane: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(Theme.border.opacity(0.5), lineWidth: 0.5)
+                    .allowsHitTesting(false)
             )
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
