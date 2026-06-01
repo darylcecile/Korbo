@@ -1,9 +1,11 @@
 import SwiftUI
+import UIKit
 
 /// Renders a single message (user or assistant) and its ordered parts.
 struct MessageView: View {
     let item: OCMessageItem
     @ObservedObject private var speech = SpeechController.shared
+    @State private var showCopyConfirm = false
 
     var body: some View {
         if item.info.role == .user {
@@ -29,6 +31,21 @@ struct MessageView: View {
                 ForEach(fileParts) { part in
                     AttachmentView(part: part)
                 }
+            }
+            .contextMenu { userMessageContextMenu }
+        }
+    }
+
+    @ViewBuilder
+    private var userMessageContextMenu: some View {
+        if !userTextContent.isEmpty {
+            Button {
+                UIPasteboard.general.string = userTextContent
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            ShareLink(item: userTextContent) {
+                Label("Share", systemImage: "square.and.arrow.up")
             }
         }
     }
@@ -61,6 +78,21 @@ struct MessageView: View {
 
             footer
         }
+        .contextMenu { assistantMessageContextMenu }
+    }
+
+    @ViewBuilder
+    private var assistantMessageContextMenu: some View {
+        if !visibleTextContent.isEmpty {
+            Button {
+                UIPasteboard.general.string = visibleTextContent
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            ShareLink(item: visibleTextContent) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
     }
 
     @ViewBuilder
@@ -88,9 +120,20 @@ struct MessageView: View {
                     Text(completed, style: .time)
                 }
             }
-            // TTS read-aloud button: only show if there's visible text
+            // TTS read-aloud and copy buttons: only show if there's visible text
             if !visibleTextContent.isEmpty {
                 Spacer()
+                Button {
+                    UIPasteboard.general.string = visibleTextContent
+                    showCopyConfirm = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        showCopyConfirm = false
+                    }
+                } label: {
+                    Image(systemName: showCopyConfirm ? "checkmark" : "doc.on.doc")
+                        .foregroundStyle(showCopyConfirm ? Theme.accent : Theme.textTertiary)
+                }
+                .buttonStyle(.plain)
                 Button {
                     speech.toggleSpeak(messageID: item.info.id, text: visibleTextContent)
                 } label: {
@@ -113,7 +156,12 @@ struct MessageView: View {
     private var textParts: [OCPart] { item.parts.filter { $0.type == .text && !($0.text ?? "").isEmpty } }
     private var fileParts: [OCPart] { item.parts.filter { $0.type == .file } }
 
-    /// Joined visible text parts for TTS
+    /// Joined user text parts for copy/share
+    private var userTextContent: String {
+        textParts.compactMap { $0.text }.joined(separator: "\n")
+    }
+
+    /// Joined visible text parts for TTS and copy/share (assistant)
     private var visibleTextContent: String {
         item.parts
             .filter { $0.type == .text && $0.isVisibleText }

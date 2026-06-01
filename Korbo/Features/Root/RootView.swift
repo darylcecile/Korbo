@@ -5,6 +5,10 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    /// Observed so an accent/theme change re-resolves every static `Theme.*`
+    /// color across the whole tree (see `.id` below), not just views that
+    /// happen to observe the store.
+    @ObservedObject private var appearance = AppearanceStore.shared
 
     var body: some View {
         GeometryReader { geo in
@@ -39,6 +43,7 @@ struct RootView: View {
                     .environmentObject(store)
             }
         }
+        .id("\(appearance.accent.rawValue)-\(appearance.theme.rawValue)")
     }
 
     /// Inline panes for the current width. Side panes that don't fit are promoted

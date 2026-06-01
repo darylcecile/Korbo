@@ -15,7 +15,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Auto‑collapse right/left at narrow widths (Split View / Stage Manager) — breakpoints compact<720 / medium / wide≥1080; side panes promoted to overlay drawers
 - [x] P0 Landscape‑first layout; portrait collapses to center + drawers — compact = chat only with sessions (left) + context (right) overlay drawers; medium = sessions inline + context drawer
 - [ ] P0 Top bar: model/agent selector, session title, project·branch·diff subtitle
-- [ ] P0 Top bar: context‑usage ring (%)
+- [x] P0 Top bar: context‑usage ring (%) — `contextRing` in ChatPane header: 24pt circular progress ring colored green→amber→red by usage, shows integer %, taps to open the context sidebar; reads `usedTokens`/`contextLimit`; verified on device
 - [ ] P1 Top bar: "open in editor" deep link (vscode://, etc.)
 - [ ] P1 Top bar: local/remote (server) selector
 - [ ] P0 Top bar: account/avatar menu
@@ -49,7 +49,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 ## 3. Conversation view (center)
 - [ ] P0 Message list, user vs assistant distinction
 - [ ] P0 Message header: sender/model logo, model badge, agent badge
-- [ ] P1 Reasoning‑effort/variant badge
+- [x] P1 Reasoning‑effort/variant badge — `reasoningMenu` brain-icon chip in composer footer shows the active variant (e.g. "Medium"); hidden for non-reasoning models; verified on device
 - [x] P0 **Text part**: markdown rendering
 - [x] P0 Code blocks: syntax highlighting + copy button
 - [x] P0 Markdown: lists, tables, blockquotes, links, emphasis, inline code
@@ -64,8 +64,8 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 **File/image attachments** inline (user + assistant)
 - [ ] P1 Step / snapshot / patch / compaction parts
 - [ ] P0 Per‑message footer: tokens, cost, duration, timestamp
-- [ ] P0 Message actions: copy
-- [ ] P1 Message actions: share, fork, revert/unrevert
+- [x] P0 Message actions: copy — context-menu Copy (long-press) on user + assistant messages, plus inline copy button in the assistant footer with a 1.2s checkmark confirmation; verified on device (clipboard round-trip)
+- [~] P1 Message actions: share, fork, revert/unrevert — share done (ShareLink in the per-message context menu, verified on device); fork + revert/unrevert still pending
 - [ ] P0 Streaming: incremental text/reasoning/tool deltas
 - [ ] P0 Abort/stop active run
 - [ ] P0 Inline **permission** card (allow once / always / reject)
@@ -89,7 +89,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Paste image; drag‑drop files — paste verified on device (text + image via UIPasteboard); drag‑drop code-complete (reuses verified attach helpers; cross-app drop unverifiable in headless sim)
 - [x] P1 Attachment chips (remove, size/path)
 - [x] P0 Model selector — interactive model picker in the composer footer (moved out of header); verified on device (round-trips selection)
-- [ ] P1 Reasoning‑effort selector
+- [x] P1 Reasoning‑effort selector — `reasoningMenu` (composer footer) lists the model's variants (descending High→Medium→Low) with a checkmark on the active one; backed by `AppearanceStore`-independent `selectedReasoningVariant` in KorboStore, persisted to UserDefaults, sent as the top-level `variant` field in the prompt body; only shown for models exposing `capabilities.reasoning`; verified on device (select High → persisted across relaunch)
 - [x] P0 Agent/mode selector (Build/Plan/…) — agent/mode picker in the composer footer (moved out of header); verified on device
 - [x] P1 Draft persistence per session — composer text saved per-session in `AppModel.drafts` (UserDefaults-backed), restored on session switch, cleared on send; verified on device
 - [x] P2 Draft preset chips / starters — starter pill chips (Explain codebase, Find & fix a bug, Write unit tests, Review recent changes, Refactor, Add docs) shown when draft empty + no messages; tap prefills + focuses composer, auto‑hides on input; verified on device
@@ -157,9 +157,9 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Skills: list/install/uninstall (catalog + from repo) — deferred (no REST API)
 - [ ] P1 MCP servers: add/connect/disconnect/remove (+ OAuth) — deferred (config-file only)
 - [ ] P2 Plugins: install/enable/disable/uninstall — deferred (config-file only)
-- [ ] P1 Appearance: theme (light/dark/system)
+- [x] P1 Appearance: theme (light/dark/system) — `AppearanceStore` with Dark/Midnight dark variants (no light theme — app is dark-only by design) + 6 accent colors (amber/blue/green/purple/pink/graphite); `Theme` tokens are now computed from the store, RootView is keyed by `accent-theme` so all static `Theme.*` reads re-resolve live; Settings → Appearance section with accent swatches + segmented theme picker; verified on device (accent + theme change propagate app-wide including message rows, both directions)
 - [ ] P1 Appearance: syntax theme + custom themes (import/export)
-- [ ] P1 Appearance: fonts (UI/mono), size, density, radius
+- [~] P1 Appearance: fonts (UI/mono), size, density, radius — text-size (Small/Standard/Large/X-Large via `dynamicTypeSize`) + density (Comfortable/Compact) pickers added in Settings; effect limited to Dynamic-Type-respecting text/controls since most app fonts are hardcoded `.system(size:)` (documented in the Settings footer note); custom font family + radius still pending
 - [ ] P1 Chat settings (default model/agent, context length, render mode, limits)
 - [ ] P1 Notifications: enable, per‑template text, sound
 - [ ] P1 Sessions: retention (archive/delete, period, auto‑cleanup)

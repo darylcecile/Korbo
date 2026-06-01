@@ -5,14 +5,17 @@ struct KorboApp: App {
     @StateObject private var appModel = AppModel()
     @StateObject private var store = KorboStore()
     @ObservedObject private var intents = IntentRouter.shared
+    @ObservedObject private var appearance = AppearanceStore.shared
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(appModel)
                 .environmentObject(store)
+                .environmentObject(appearance)
                 .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+                .tint(appearance.accentColor)
+                .environment(\.dynamicTypeSize, appearance.effectiveDynamicTypeSize)
                 .task {
                     // Attempt to connect to the selected server on launch. If no
                     // credentials are stored yet this surfaces a failed state and

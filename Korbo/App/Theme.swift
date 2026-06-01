@@ -2,12 +2,16 @@ import SwiftUI
 
 /// Central design tokens for Korbo. Mirrors the dark, low-chroma aesthetic of
 /// the openchamber opencode client so panels feel cohesive.
+/// Dynamic tokens (accent, bg, panel, panelRaised, border) read from AppearanceStore.
 enum Theme {
-    static let accent = Color(hex: 0xE8783C)        // warm amber (active session / send)
-    static let bg = Color(hex: 0x0E0E10)            // app background
-    static let panel = Color(hex: 0x141417)         // panel background
-    static let panelRaised = Color(hex: 0x1B1B1F)   // cards / composer
-    static let border = Color(hex: 0x2A2A30)
+    // Dynamic tokens — read from AppearanceStore.shared
+    static var accent: Color { AppearanceStore.shared.accentColor }
+    static var bg: Color { AppearanceStore.shared.bg }
+    static var panel: Color { AppearanceStore.shared.panel }
+    static var panelRaised: Color { AppearanceStore.shared.panelRaised }
+    static var border: Color { AppearanceStore.shared.border }
+
+    // Static tokens — unchanged
     static let textPrimary = Color(hex: 0xEDEDEF)
     static let textSecondary = Color(hex: 0x9A9AA2)
     static let textTertiary = Color(hex: 0x6A6A72)

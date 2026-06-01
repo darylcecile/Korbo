@@ -9,6 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var appearance = AppearanceStore.shared
 
     @State private var keyTarget: OCProvider?
     @State private var keyInput: String = ""
@@ -19,6 +20,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 connectionSection
+                appearanceSection
                 providersSection
                 agentsSection
                 commandsSection
@@ -81,6 +83,71 @@ struct SettingsView: View {
                 dismiss()
                 app.showConnectionSheet = true
             }
+        }
+    }
+
+    // MARK: Appearance
+
+    private var appearanceSection: some View {
+        Section {
+            // Accent color swatches
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Accent").font(.subheadline)
+                HStack(spacing: 12) {
+                    ForEach(AppearanceStore.Accent.allCases) { accent in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                appearance.accent = accent
+                            }
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(accent.color)
+                                    .frame(width: 26, height: 26)
+                                if appearance.accent == accent {
+                                    Circle()
+                                        .strokeBorder(Theme.textPrimary, lineWidth: 2)
+                                        .frame(width: 32, height: 32)
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .frame(width: 36, height: 36)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+
+            // Theme variant
+            Picker("Theme", selection: $appearance.theme) {
+                ForEach(AppearanceStore.ThemeVariant.allCases) { variant in
+                    Text(variant.label).tag(variant)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            // Text size
+            Picker("Text size", selection: $appearance.textSize) {
+                ForEach(AppearanceStore.TextSize.allCases) { size in
+                    Text(size.label).tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            // Density
+            Picker("Density", selection: $appearance.density) {
+                ForEach(AppearanceStore.Density.allCases) { density in
+                    Text(density.label).tag(density)
+                }
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Appearance")
+        } footer: {
+            Text("Text size and density affect Dynamic Type–respecting text and standard controls.")
         }
     }
 
