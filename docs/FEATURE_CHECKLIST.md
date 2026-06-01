@@ -29,7 +29,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 Session list with live data from `/session` + events
 - [x] P0 Grouping: recent (today/yesterday/7‑days/older)
 - [x] P1 Grouping: by project/folder — `SessionGrouping.project` toggle in the sort menu, grouped by `projectName`/`directory`, persisted; already implemented
-- [ ] P1 Grouping: by worktree/branch
+- [x] P1 Grouping: by worktree/branch — "Worktree" option in the sidebar group-by menu clusters sessions by their full working `directory` (one group per worktree, labelled `<parent>/<leaf>` so multiple worktrees of the same repo stay distinct), ordered by most-recent activity with archived sessions appended. Grouping is by worktree directory rather than git branch: opencode's session API carries `directory` but no per-session branch, and `/vcs` only reports the branch of the server's active directory
 - [x] P0 Grouping: archived section
 - [x] P0 Item: title, project, +/− diff, relative time *(branch is workspace‑level in opencode, not per‑session — omitted)*
 - [~] P1 Item: streaming/active badge *(active dot done; pin/favourite done — see pin/unpin)*

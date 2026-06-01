@@ -60,6 +60,22 @@ struct OCSession: Codable, Identifiable, Hashable {
         return (directory as NSString).lastPathComponent
     }
 
+    /// Worktree label for the session, shown as `<parent>/<leaf>` so that
+    /// multiple worktrees of the same repository (which share a parent folder
+    /// but differ in leaf, e.g. `Korbo/feature-a` vs `Korbo/feature-b`) stay
+    /// distinguishable. Falls back to the leaf alone, or "No worktree" when the
+    /// session has no directory. NOTE: opencode's session API carries the
+    /// worktree `directory` but not a git branch, and `/vcs` only reports the
+    /// branch of the server's active directory — so grouping is by worktree
+    /// directory rather than by branch.
+    var worktreeLabel: String {
+        guard let directory, !directory.isEmpty else { return "No worktree" }
+        let comps = directory.split(separator: "/").map(String.init)
+        guard let leaf = comps.last else { return "No worktree" }
+        if comps.count >= 2 { return "\(comps[comps.count - 2])/\(leaf)" }
+        return leaf
+    }
+
     var additions: Int { Int(summary?.additions ?? 0) }
     var deletions: Int { Int(summary?.deletions ?? 0) }
 

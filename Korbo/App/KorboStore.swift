@@ -709,6 +709,7 @@ final class KorboStore: ObservableObject {
         switch sessionGrouping {
         case .recency: return recencyGroups(visible)
         case .project: return projectGroups(visible)
+        case .worktree: return worktreeGroups(visible)
         }
     }
 
@@ -744,6 +745,31 @@ final class KorboStore: ObservableObject {
         // Order project groups by their most-recent activity (most active first).
         var groups: [SessionGroup] = byProject.map { name, items in
             SessionGroup(id: "project:\(name)", title: name, sessions: sortedSessions(items), bucket: nil)
+        }
+        .sorted { a, b in
+            (a.sessions.first?.lastActivity ?? .distantPast) > (b.sessions.first?.lastActivity ?? .distantPast)
+        }
+        if !archived.isEmpty {
+            groups.append(SessionGroup(id: SessionBucket.archived.id,
+                                       title: SessionBucket.archived.title,
+                                       sessions: sortedSessions(archived), bucket: .archived))
+        }
+        return groups
+    }
+
+    private func worktreeGroups(_ visible: [OCSession]) -> [SessionGroup] {
+        let active = visible.filter { !$0.isArchived }
+        let archived = visible.filter { $0.isArchived }
+        var byWorktree: [String: [OCSession]] = [:]
+        for session in active {
+            byWorktree[session.directory ?? "", default: []].append(session)
+        }
+        // One group per distinct worktree directory, ordered by most-recent
+        // activity (most active worktree first).
+        var groups: [SessionGroup] = byWorktree.map { _, items in
+            SessionGroup(id: "worktree:\(items.first?.directory ?? "none")",
+                         title: items.first?.worktreeLabel ?? "No worktree",
+                         sessions: sortedSessions(items), bucket: nil)
         }
         .sorted { a, b in
             (a.sessions.first?.lastActivity ?? .distantPast) > (b.sessions.first?.lastActivity ?? .distantPast)
@@ -1346,18 +1372,20 @@ struct SessionGroup: Identifiable {
 
 /// How sessions in the sidebar are grouped.
 enum SessionGrouping: String, CaseIterable, Identifiable {
-    case recency, project
+    case recency, project, worktree
     var id: String { rawValue }
     var title: String {
         switch self {
         case .recency: return "Recency"
         case .project: return "Project"
+        case .worktree: return "Worktree"
         }
     }
     var icon: String {
         switch self {
         case .recency: return "clock"
         case .project: return "folder"
+        case .worktree: return "arrow.triangle.branch"
         }
     }
 }

@@ -166,7 +166,7 @@ struct SessionsSidebar: View {
             Image(systemName: "line.3.horizontal.decrease.circle")
         }
         .buttonStyle(.plain)
-        .foregroundStyle(store.sessionGrouping == .project ? Theme.accent : Theme.textSecondary)
+        .foregroundStyle(store.sessionGrouping != .recency ? Theme.accent : Theme.textSecondary)
         .disabled(!store.status.isConnected)
         .accessibilityLabel("Filter and sort sessions")
     }
