@@ -128,6 +128,18 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(Double(next), forKey: Self.contextWidthKey)
     }
 
+    /// Safe width for the *inline* context pane given the available window width.
+    /// The upper bound is width-derived, so on a narrow screen it can fall below
+    /// `contextWidthRange.lowerBound`; the `max(lower, …)` guard keeps the
+    /// `ClosedRange` from inverting (which would crash). This matters because the
+    /// very first render happens with the default `.wide` mode before `onAppear`
+    /// corrects it, so this can momentarily run with an iPhone-sized width.
+    func contextPaneInlineWidth(available: CGFloat) -> CGFloat {
+        let lower = Self.contextWidthRange.lowerBound
+        let upper = max(lower, min(Self.contextWidthRange.upperBound, available * 0.6))
+        return contextPaneWidth.clamped(to: lower...upper)
+    }
+
     func toggleCommandPalette() { showCommandPalette.toggle() }
     func toggleTerminal() {
         centerPane = centerPane == .terminal ? .chat : .terminal

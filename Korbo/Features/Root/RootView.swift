@@ -86,7 +86,7 @@ struct RootView: View {
             if mode.isWide && app.showRightSidebar {
                 PaneResizeHandle { dx in app.resizeContextPane(by: -dx, available: width) }
                 ContextPane()
-                    .frame(width: app.contextPaneWidth.clamped(to: AppModel.contextWidthRange.lowerBound...min(AppModel.contextWidthRange.upperBound, width * 0.6)))
+                    .frame(width: app.contextPaneInlineWidth(available: width))
                     .transition(.move(edge: .trailing))
             }
         }
