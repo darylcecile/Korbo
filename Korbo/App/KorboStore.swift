@@ -457,6 +457,49 @@ final class KorboStore: ObservableObject {
         await loadMessages(sessionID: id)
     }
 
+    // MARK: - Handoff (Continuity)
+
+    /// Populate an `NSUserActivity` describing the currently-selected session so
+    /// it can be handed off to another device. No-op when nothing is selected.
+    func decorateHandoff(_ activity: NSUserActivity) {
+        guard let sessionID = selectedSessionID else { return }
+        let title = sessions.first { $0.id == sessionID }?.title ?? "Korbo session"
+        activity.title = title
+        activity.isEligibleForHandoff = true
+        var info: [String: Any] = [
+            Handoff.Key.sessionID: sessionID,
+            Handoff.Key.sessionTitle: title,
+        ]
+        if let server = servers.selectedServer {
+            info[Handoff.Key.serverID] = server.id.uuidString
+            info[Handoff.Key.serverURL] = server.normalizedURLString
+        }
+        activity.userInfo = info
+    }
+
+    /// Restore a session handed off from another device: switch to the matching
+    /// server (by id, then by URL), connect, and open the session.
+    func continueHandoff(_ activity: NSUserActivity) async {
+        guard let info = activity.userInfo else { return }
+        let sessionID = info[Handoff.Key.sessionID] as? String
+
+        // Prefer an exact server-id match; fall back to matching the normalized
+        // URL (the same remote may have a different local UUID on this device).
+        if let idString = info[Handoff.Key.serverID] as? String,
+           let uuid = UUID(uuidString: idString),
+           servers.servers.contains(where: { $0.id == uuid }) {
+            servers.select(uuid)
+        } else if let urlString = info[Handoff.Key.serverURL] as? String,
+                  let match = servers.servers.first(where: { $0.normalizedURLString == urlString }) {
+            servers.select(match.id)
+        }
+
+        await connect()
+        if let sessionID, sessions.contains(where: { $0.id == sessionID }) {
+            await selectSession(sessionID)
+        }
+    }
+
     // MARK: - Terminal (PTY)
 
     /// The connected client, exposed so the Terminal view can open the PTY

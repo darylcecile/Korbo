@@ -26,11 +26,14 @@ targets:
     platform: iOS
     sources:
       - path: Korbo
+        excludes:
+          - "Info.plist"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.Korbo
         IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Korbo/Info.plist
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Korbo uses the microphone for voice dictation into the composer."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Korbo uses speech recognition to transcribe your dictation into prompt text."
         CURRENT_PROJECT_VERSION: "1"

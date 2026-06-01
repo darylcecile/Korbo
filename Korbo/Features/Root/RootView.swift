@@ -46,6 +46,12 @@ struct RootView: View {
                 ShortcutsCheatSheet()
                     .environmentObject(app)
             }
+            .userActivity(Handoff.sessionActivityType, isActive: store.selectedSessionID != nil) { activity in
+                store.decorateHandoff(activity)
+            }
+            .onContinueUserActivity(Handoff.sessionActivityType) { activity in
+                Task { await store.continueHandoff(activity) }
+            }
         }
         .id("\(appearance.accent.rawValue)-\(appearance.theme.rawValue)")
     }
