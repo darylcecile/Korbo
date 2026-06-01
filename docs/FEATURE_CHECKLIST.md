@@ -145,7 +145,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Token‑usage breakdown (input/cache/output/reasoning) + bar — proportional segmented bar + per-bucket legend from the latest assistant turn's `tokens`; verified on device
 - [x] P1 Context‑limit warning — total vs model `limit.context` with % and an amber warning at ≥80%; verified on device (200K window resolved)
 - [~] P1 Remove item from context / view file — view: context-file rows are now tappable; image attachments open an inline base64-decoded preview sheet, text files open in the Files center pane (verified on device with `korbo-test.png`). Remove-from-context still pending (needs server support)
-- [ ] P2 Context modes/tabs (diff/file/context/plan/preview/browser)
+- [x] P2 Context modes/tabs — segmented **Files / Plan / Usage** `Picker` at the top of the Context tab splits existing context data into sub-modes (Files = files-in-context list w/ tap-to-view; Plan = agent todo/plan panel; Usage = cost + token-usage breakdown + diff stats + model/project); pure client reorg over already-loaded data (no new networking); verified on device
 - [x] P1 Agent todo panel — Context tab "Agent todos" panel reads the latest `todowrite`/`todoread` tool part (`store.latestTodos`), showing completed/total progress + per-row glyph (half-circle for in-progress accent, struck-through green when completed) and priority; hidden when empty; verified on device
 - [ ] P2 Plan editor; project notes & todo panel
 

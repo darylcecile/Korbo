@@ -7,6 +7,25 @@ struct ContextPane: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
     @State private var previewImage: ContextImagePreview?
+    @State private var contextMode: ContextMode = .files
+
+    /// Sub-modes within the Context tab. Each maps to existing context data so
+    /// switching segments is a pure reorganization, not new networking.
+    private enum ContextMode: String, CaseIterable, Identifiable {
+        case files
+        case plan
+        case usage
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .files: return "Files"
+            case .plan: return "Plan"
+            case .usage: return "Usage"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -124,37 +143,91 @@ struct ContextPane: View {
     @ViewBuilder
     private var contextTab: some View {
         if let session = store.selectedSession {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    todoPanel
-                    if !store.latestTodos.isEmpty {
-                        Divider().overlay(Theme.border)
-                    }
-                    metricRow("Cost", value: session.cost.map { String(format: "$%.4f", $0) } ?? "—")
-                    if let usage = store.latestUsage {
-                        usageSection(usage)
-                    }
-                    Divider().overlay(Theme.border)
-                    metricRow("Additions", value: "+\(session.additions)", color: Theme.added)
-                    metricRow("Deletions", value: "-\(session.deletions)", color: Theme.removed)
-                    if let project = session.projectName {
-                        metricRow("Project", value: project)
-                    }
-                    if let model = session.model?.modelID {
-                        metricRow("Model", value: model)
-                    }
-                    if !store.contextFiles.isEmpty {
-                        Divider().overlay(Theme.border)
-                        contextFilesPanel
+            VStack(spacing: 0) {
+                Picker("Context section", selection: $contextMode) {
+                    ForEach(ContextMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
                     }
                 }
-                .padding(16)
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        switch contextMode {
+                        case .files:
+                            filesSection
+                        case .plan:
+                            planSection
+                        case .usage:
+                            usageMetricsSection(session)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                }
             }
         } else {
             comingSoon(icon: "doc.text.magnifyingglass",
                        title: "No session selected",
                        detail: "Select a session to see its token usage and cost.")
         }
+    }
+
+    /// Files-in-context list with tap-to-view.
+    @ViewBuilder
+    private var filesSection: some View {
+        if store.contextFiles.isEmpty {
+            sectionEmptyState(icon: "doc.on.doc",
+                              title: "No context files",
+                              detail: "Files referenced by the agent will appear here.")
+        } else {
+            contextFilesPanel
+        }
+    }
+
+    /// Agent todo / plan panel.
+    @ViewBuilder
+    private var planSection: some View {
+        if store.latestTodos.isEmpty {
+            sectionEmptyState(icon: "checklist",
+                              title: "No plan yet",
+                              detail: "The agent's todo plan will appear here once it starts working.")
+        } else {
+            todoPanel
+        }
+    }
+
+    /// Session cost and token-usage metrics.
+    @ViewBuilder
+    private func usageMetricsSection(_ session: OCSession) -> some View {
+        metricRow("Cost", value: session.cost.map { String(format: "$%.4f", $0) } ?? "—")
+        if let usage = store.latestUsage {
+            usageSection(usage)
+        }
+        Divider().overlay(Theme.border)
+        metricRow("Additions", value: "+\(session.additions)", color: Theme.added)
+        metricRow("Deletions", value: "-\(session.deletions)", color: Theme.removed)
+        if let project = session.projectName {
+            metricRow("Project", value: project)
+        }
+        if let model = session.model?.modelID {
+            metricRow("Model", value: model)
+        }
+    }
+
+    private func sectionEmptyState(icon: String, title: String, detail: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 28)).foregroundStyle(Theme.textTertiary)
+            Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
     }
 
     // MARK: Token usage
