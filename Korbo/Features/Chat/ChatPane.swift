@@ -84,6 +84,8 @@ struct ChatPane: View {
             }
             Spacer()
 
+            contextRing
+
             Button { app.showRightSidebar.toggle() } label: {
                 Image(systemName: "sidebar.right")
             }
@@ -157,6 +159,76 @@ struct ChatPane: View {
         .foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 10).padding(.vertical, 7)
         .contentShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: Reasoning-effort selector
+
+    @ViewBuilder
+    private var reasoningMenu: some View {
+        if let model = store.effectiveModelObject(), model.supportsReasoning {
+            Menu {
+                ForEach(model.variantNames, id: \.self) { name in
+                    Button {
+                        store.selectReasoningVariant(name)
+                    } label: {
+                        if store.resolveVariant() == name {
+                            Label(variantLabel(name), systemImage: "checkmark")
+                        } else {
+                            Text(variantLabel(name))
+                        }
+                    }
+                }
+            } label: {
+                chip(icon: "brain", text: variantLabel(store.resolveVariant() ?? "Medium"))
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(!store.status.isConnected)
+        }
+    }
+
+    private func variantLabel(_ variant: String) -> String {
+        switch variant.lowercased() {
+        case "none": return "None"
+        case "low": return "Low"
+        case "medium": return "Medium"
+        case "high": return "High"
+        case "xhigh": return "X-High"
+        default: return variant.capitalized
+        }
+    }
+
+    // MARK: Context-usage ring
+
+    @ViewBuilder
+    private var contextRing: some View {
+        if let usage = store.latestUsage,
+           let limit = store.contextLimit, limit > 0 {
+            let fraction = min(usage.resolvedTotal / Double(limit), 1.0)
+            Button {
+                app.showRightSidebar = true
+            } label: {
+                ZStack {
+                    Circle()
+                        .stroke(Theme.border, lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(usageColor(fraction), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Text("\(Int(fraction * 100))")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Context usage \(Int(fraction * 100)) percent")
+        }
+    }
+
+    private func usageColor(_ fraction: Double) -> Color {
+        if fraction < 0.6 { return Theme.added }
+        if fraction < 0.85 { return Theme.accent }
+        return Theme.removed
     }
 
     private func models(of provider: OCProvider) -> [OCModel] {
@@ -390,6 +462,7 @@ struct ChatPane: View {
                     Spacer()
                     modelMenu
                     agentMenu
+                    reasoningMenu
                     if store.isGenerating {
                         Button { Task { await store.abort() } } label: {
                             Image(systemName: "stop.fill").foregroundStyle(Theme.removed)

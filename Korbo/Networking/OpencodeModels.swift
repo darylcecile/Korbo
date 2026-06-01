@@ -259,11 +259,42 @@ struct OCModel: Codable, Identifiable, Hashable {
     var name: String?
     var providerID: String?
     var limit: Limit?
+    var capabilities: Capabilities?
+    var variants: [String: JSONValue]?
 
     /// Model context/output token limits (from models.dev via `/provider`).
     struct Limit: Codable, Hashable {
         var context: Double?
         var output: Double?
+    }
+
+    /// Model capability flags (only `reasoning` is used; others decode silently).
+    struct Capabilities: Codable, Hashable {
+        var reasoning: Bool?
+    }
+
+    /// Whether this model supports reasoning variants.
+    var supportsReasoning: Bool {
+        (capabilities?.reasoning ?? false) && !variantNames.isEmpty
+    }
+
+    /// Sorted variant keys in canonical order: none < low < medium < high < xhigh.
+    var variantNames: [String] {
+        guard let variants else { return [] }
+        return Array(variants.keys).sorted(by: Self.variantOrder)
+    }
+
+    /// Comparator for canonical variant ordering.
+    static func variantOrder(_ a: String, _ b: String) -> Bool {
+        let order = ["none", "low", "medium", "high", "xhigh"]
+        let ai = order.firstIndex(of: a)
+        let bi = order.firstIndex(of: b)
+        switch (ai, bi) {
+        case let (.some(ia), .some(ib)): return ia < ib
+        case (.some, .none): return true
+        case (.none, .some): return false
+        case (.none, .none): return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+        }
     }
 }
 

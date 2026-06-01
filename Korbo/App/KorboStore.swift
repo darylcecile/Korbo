@@ -102,6 +102,9 @@ final class KorboStore: ObservableObject {
     /// across launches via `UserDefaults`.
     @Published private(set) var selectedModelOverride: OCModelRef?
     @Published private(set) var selectedAgentName: String?
+    /// User-chosen reasoning effort variant (e.g. "low", "medium", "high").
+    /// `nil` uses model default via `resolveVariant()`.
+    @Published private(set) var selectedReasoningVariant: String?
     /// Set while a provider API-key write/removal is in flight (drives Settings UI).
     @Published private(set) var isUpdatingAuth = false
 
@@ -242,6 +245,7 @@ final class KorboStore: ObservableObject {
 
     private static let modelDefaultsKey = "korbo.selectedModel"
     private static let agentDefaultsKey = "korbo.selectedAgent"
+    private static let reasoningVariantDefaultsKey = "korbo.reasoningVariant"
     private static let groupingDefaultsKey = "korbo.sessionGrouping"
     private static let sortDefaultsKey = "korbo.sessionSort"
 
@@ -252,6 +256,7 @@ final class KorboStore: ObservableObject {
             selectedModelOverride = ref
         }
         selectedAgentName = defaults.string(forKey: Self.agentDefaultsKey)
+        selectedReasoningVariant = defaults.string(forKey: Self.reasoningVariantDefaultsKey)
         if let raw = defaults.string(forKey: Self.groupingDefaultsKey),
            let g = SessionGrouping(rawValue: raw) { sessionGrouping = g }
         if let raw = defaults.string(forKey: Self.sortDefaultsKey),
@@ -277,6 +282,14 @@ final class KorboStore: ObservableObject {
         else { defaults.removeObject(forKey: Self.agentDefaultsKey) }
     }
 
+    /// Choose the reasoning variant for new prompts. Pass `nil` to use model default.
+    func selectReasoningVariant(_ variant: String?) {
+        selectedReasoningVariant = variant
+        let defaults = UserDefaults.standard
+        if let variant { defaults.set(variant, forKey: Self.reasoningVariantDefaultsKey) }
+        else { defaults.removeObject(forKey: Self.reasoningVariantDefaultsKey) }
+    }
+
     /// Agents the user can pick as the primary driver of a conversation:
     /// `primary`/`all` modes only (subagents are invoked by the model, not chosen
     /// here), and not `hidden` (opencode marks internal agents like
@@ -293,6 +306,29 @@ final class KorboStore: ObservableObject {
         let order = preferred.filter { providers.connected.contains($0) }
             + providers.connected.filter { !preferred.contains($0) }
         return order.compactMap { id in providers.all.first { $0.id == id } }
+    }
+
+    /// The OCModel object for the currently effective model, if resolvable.
+    func effectiveModelObject() -> OCModel? {
+        guard let ref = resolveModel(),
+              let provider = providers?.all.first(where: { $0.id == ref.providerID }),
+              let model = provider.models?[ref.modelID] else { return nil }
+        return model
+    }
+
+    /// Resolve the reasoning variant to send with a prompt:
+    /// - `nil` for non-reasoning models.
+    /// - User override if valid for the current model.
+    /// - Otherwise: prefer "medium", else the middle variant, else first.
+    func resolveVariant() -> String? {
+        guard let model = effectiveModelObject(), model.supportsReasoning else { return nil }
+        let names = model.variantNames
+        if let override = selectedReasoningVariant, names.contains(override) {
+            return override
+        }
+        if names.contains("medium") { return "medium" }
+        if !names.isEmpty { return names[names.count / 2] }
+        return names.first
     }
 
     /// Human-friendly label for a model reference (its display name if known).
@@ -873,6 +909,9 @@ final class KorboStore: ObservableObject {
         }
         if let agent = resolveAgent() {
             body["agent"] = agent
+        }
+        if let variant = resolveVariant() {
+            body["variant"] = variant
         }
         activeSessionIDs.insert(sid)
         do {
