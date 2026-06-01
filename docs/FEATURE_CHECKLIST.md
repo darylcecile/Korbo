@@ -71,7 +71,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 Inline **permission** card (allow once / always / reject)
 - [ ] P1 Inline **question** card (reply / reject)
 - [ ] P0 Empty state
-- [ ] P0 Error state (+ retry)
+- [x] P0 Error state (+ retry) — connection-failure banner with `lastError` + Retry (see Connection-status banner)
 - [ ] P1 Pending‑changes bar (unstaged git)
 - [x] P1 Auto‑scroll w/ "scroll to bottom" affordance
 - [ ] P2 Inline code comments / drafts
@@ -185,7 +185,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 SSE `/event` long‑lived connection + reconnect/backoff
 - [ ] P0 Event reducer for all 77 event types (unknown ignored)
 - [ ] P1 Multiple servers, quick switch
-- [ ] P1 Connection‑status banner / offline handling
+- [x] P1 Connection‑status banner / offline handling — top banner surfaces connecting/failed/disconnected with `lastError` detail + one-tap Retry; hidden while connected; verified on device
 - [ ] P2 Workspace/worktree sync endpoints
 - [ ] P2 Cert pinning option
 

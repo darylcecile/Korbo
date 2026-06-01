@@ -12,6 +12,8 @@ struct RootView: View {
             ZStack {
                 baseLayout(mode, width: geo.size.width)
                 drawerOverlays(mode, width: geo.size.width)
+                ConnectionBanner()
+                    .zIndex(8)
                 if app.showCommandPalette {
                     CommandPalette()
                         .transition(.opacity)
@@ -119,6 +121,98 @@ struct RootView: View {
             .onTapGesture(perform: dismiss)
             .transition(.opacity)
             .zIndex(5)
+    }
+}
+
+/// A thin top banner that surfaces non-connected states (connecting / failed /
+/// disconnected) with a one-tap retry. Hidden entirely while connected so it
+/// never steals space from the panes.
+private struct ConnectionBanner: View {
+    @EnvironmentObject private var store: KorboStore
+    @State private var retrying = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !store.status.isConnected {
+                banner
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                Spacer(minLength: 0)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: store.status)
+    }
+
+    private var banner: some View {
+        HStack(spacing: 10) {
+            icon
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                if let detail = detail {
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            if showsRetry {
+                Button {
+                    guard !retrying else { return }
+                    retrying = true
+                    Task {
+                        await store.connect()
+                        retrying = false
+                    }
+                } label: {
+                    Text(retrying ? "Retrying…" : "Retry")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .disabled(retrying)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) { Divider().overlay(Theme.border) }
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        switch store.status {
+        case .connecting:
+            ProgressView().controlSize(.small)
+        case .failed:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Theme.removed)
+        default:
+            Image(systemName: "wifi.slash")
+                .foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    private var title: String {
+        switch store.status {
+        case .connecting: return "Connecting…"
+        case .failed: return "Connection failed"
+        case .disconnected: return "Disconnected"
+        case .connected: return ""
+        }
+    }
+
+    private var detail: String? {
+        if case .connecting = store.status { return nil }
+        return store.lastError
+    }
+
+    private var showsRetry: Bool {
+        switch store.status {
+        case .failed, .disconnected: return true
+        case .connecting, .connected: return false
+        }
     }
 }
 
