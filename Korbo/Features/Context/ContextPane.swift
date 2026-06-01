@@ -74,6 +74,35 @@ struct ContextPane: View {
         }
     }
 
+    // MARK: Context files
+
+    @ViewBuilder
+    private var contextFilesPanel: some View {
+        let files = store.contextFiles
+        if !files.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Context files")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer()
+                    Text("\(files.count)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(files) { file in
+                        ContextFileRow(file: file)
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8).fill(Theme.bg)
+                )
+            }
+        }
+    }
+
     // MARK: Context tab (live)
 
     @ViewBuilder
@@ -97,6 +126,10 @@ struct ContextPane: View {
                     }
                     if let model = session.model?.modelID {
                         metricRow("Model", value: model)
+                    }
+                    if !store.contextFiles.isEmpty {
+                        Divider().overlay(Theme.border)
+                        contextFilesPanel
                     }
                 }
                 .padding(16)
@@ -274,5 +307,36 @@ private struct ContextTodoRow: View {
                     .foregroundStyle(priority == "high" ? Theme.removed : Theme.textTertiary)
             }
         }
+    }
+}
+
+// MARK: - ContextFileRow
+
+private struct ContextFileRow: View {
+    let file: ContextFile
+
+    private var glyph: String {
+        guard let mime = file.mime?.lowercased() else { return "doc" }
+        if mime.hasPrefix("image/") { return "photo" }
+        if mime.contains("pdf") { return "doc.richtext" }
+        if mime.hasPrefix("text/") || mime.contains("json") || mime.contains("xml") { return "doc.text" }
+        return "doc"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: glyph)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textTertiary)
+                .frame(width: 16)
+            Text(file.name)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Context file \(file.name)")
     }
 }

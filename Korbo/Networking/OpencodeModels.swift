@@ -358,6 +358,16 @@ struct OCQuestionOption: Codable, Hashable {
     var description: String
 }
 
+/// A file or attachment referenced in the conversation, surfaced in the Context
+/// tab's "Context files" list. `path` is the full file path (or URL for remote
+/// attachments); `name` is the display basename.
+struct ContextFile: Identifiable, Hashable {
+    let path: String
+    var mime: String?
+    var id: String { path }
+    var name: String { (path as NSString).lastPathComponent }
+}
+
 // MARK: - VCS / files
 
 /// Git/VCS file change status as reported by `/file/status` and `/vcs/status`.

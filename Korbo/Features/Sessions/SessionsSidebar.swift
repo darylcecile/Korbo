@@ -10,7 +10,7 @@ struct SessionsSidebar: View {
     @State private var renameTarget: OCSession?
     @State private var renameText: String = ""
     @State private var deleteTarget: OCSession?
-    @State private var shareURL: String?
+    @State private var shareItem: ShareURLItem?
 
     // Multi-select state
     @State private var isSelectMode = false
@@ -57,14 +57,8 @@ struct SessionsSidebar: View {
         } message: {
             Text(deleteTarget?.title ?? "This session will be permanently removed.")
         }
-        .alert("Share link", isPresented: shareBinding) {
-            Button("Copy link") {
-                if let url = shareURL { UIPasteboard.general.string = url }
-                shareURL = nil
-            }
-            Button("Done", role: .cancel) { shareURL = nil }
-        } message: {
-            Text(shareURL ?? "")
+        .sheet(item: $shareItem) { item in
+            ActivityView(items: [URL(string: item.url) ?? item.url as Any])
         }
         .confirmationDialog(
             "Delete \(selectedIDs.count) session\(selectedIDs.count == 1 ? "" : "s")?",
@@ -78,10 +72,6 @@ struct SessionsSidebar: View {
         } message: {
             Text("This will permanently remove the selected sessions.")
         }
-    }
-
-    private var shareBinding: Binding<Bool> {
-        Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })
     }
 
     private var renameBinding: Binding<Bool> {
@@ -356,14 +346,18 @@ struct SessionsSidebar: View {
 
         if session.isShared {
             Button {
-                if let url = session.shareURL { UIPasteboard.general.string = url; shareURL = url }
-            } label: { Label("Copy share link", systemImage: "link") }
+                if let url = session.shareURL { shareItem = ShareURLItem(url: url) }
+            } label: { Label("Share link", systemImage: "square.and.arrow.up") }
             Button {
                 Task { await store.unshareSession(session.id) }
             } label: { Label("Stop sharing", systemImage: "person.crop.circle.badge.xmark") }
         } else {
             Button {
-                Task { shareURL = await store.shareSession(session.id) }
+                Task {
+                    if let url = await store.shareSession(session.id) {
+                        shareItem = ShareURLItem(url: url)
+                    }
+                }
             } label: { Label("Share link", systemImage: "square.and.arrow.up") }
         }
 
@@ -434,18 +428,45 @@ struct SessionsSidebar: View {
 
     private var footer: some View {
         HStack(spacing: 18) {
-            Button {
-                app.showSettingsSheet = true
+            Menu {
+                Section("Server") {
+                    ForEach(store.servers.servers) { server in
+                        Button {
+                            Task { await store.switchServer(to: server.id) }
+                        } label: {
+                            if server.id == store.servers.selectedServerID {
+                                Label(server.name, systemImage: "checkmark")
+                            } else {
+                                Text(server.name)
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button { app.showConnectionSheet = true } label: {
+                    Label("Manage servers…", systemImage: "server.rack")
+                }
             } label: {
                 HStack(spacing: 6) {
                     Circle().fill(statusColor).frame(width: 8, height: 8)
-                    Image(systemName: "gearshape")
+                    Text(store.servers.selectedServer?.name ?? "Server")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
                 }
             }
-            .buttonStyle(.plain)
-            Image(systemName: "questionmark.circle")
-            Image(systemName: "info.circle")
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Server \(store.servers.selectedServer?.name ?? "none"), \(store.status.label)")
+            .accessibilityHint("Switch or manage servers")
+
             Spacer()
+
+            Button {
+                app.showSettingsSheet = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
         }
         .font(.system(size: 14))
         .foregroundStyle(Theme.textTertiary)
@@ -594,4 +615,23 @@ struct SessionsSidebar: View {
         }
         exitSelectMode()
     }
+}
+
+/// Identifiable wrapper so a freshly-generated share URL can drive a
+/// `.sheet(item:)` presentation of the native iOS share sheet.
+struct ShareURLItem: Identifiable {
+    let id = UUID()
+    let url: String
+}
+
+/// Hosts a `UIActivityViewController` so share links open in the system share
+/// sheet (AirDrop, Messages, copy, etc.) instead of a copy-only alert.
+struct ActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

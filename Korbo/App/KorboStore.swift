@@ -1084,6 +1084,31 @@ final class KorboStore: ObservableObject {
         return []
     }
 
+    /// Files and attachments referenced in the current conversation, deduplicated
+    /// by path. Derived from `file` parts across all messages (newest first).
+    /// opencode does not expose a per-item token count, so we surface the file's
+    /// name and type only — aggregate context usage lives in `latestUsage`.
+    var contextFiles: [ContextFile] {
+        var seen = Set<String>()
+        var result: [ContextFile] = []
+        for item in messages.reversed() {
+            for part in item.parts where part.type == .file {
+                let path = part.filename ?? part.url ?? "file"
+                guard seen.insert(path).inserted else { continue }
+                result.append(ContextFile(path: path, mime: part.mime))
+            }
+        }
+        return result
+    }
+
+    /// Select a different saved server and (re)connect to it. No-op if the id is
+    /// already the active server.
+    func switchServer(to id: UUID) async {
+        guard servers.selectedServerID != id else { return }
+        servers.select(id)
+        await connect()
+    }
+
     /// Best-effort model selection for a new prompt:
     /// 1. the user's explicit picker override, if set;
     /// 2. the session's last-used model, if any;
