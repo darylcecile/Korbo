@@ -14,6 +14,13 @@ struct ChatPane: View {
     @State private var isDropTargeted = false
     @FocusState private var composerFocused: Bool
 
+    /// iPhone gets a larger, more touch-friendly composer (bigger font, taller
+    /// default input, larger toolbar controls). iPad is left as-is because we
+    /// expect a hardware keyboard/trackpad there.
+    private var isPhone: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
+
     // Find-in-conversation (local to this view; no app-level state).
     @State private var isSearching = false
     @State private var searchQuery = ""
@@ -655,8 +662,8 @@ struct ChatPane: View {
                 }
                 TextField("@ for files/agents;  / for commands;  ! for shell", text: $app.composerDraft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .lineLimit(1...10)
+                    .font(.system(size: isPhone ? 17 : 14))
+                    .lineLimit(isPhone ? 3...12 : 1...10)
                     .disabled(!canSend)
                     .focused($composerFocused)
                     .onKeyPress(.return, phases: .down) { keyPress in
@@ -738,12 +745,12 @@ struct ChatPane: View {
                         .accessibilityLabel("Send message")
                     }
                 }
-                .font(.system(size: 13))
+                .font(.system(size: isPhone ? 15 : 13))
                 .foregroundStyle(Theme.textSecondary)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
+            .padding(.top, isPhone ? 14 : 12)
+            .padding(.bottom, isPhone ? 12 : 10)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
