@@ -10,7 +10,7 @@ struct RootView: View {
         GeometryReader { geo in
             let mode = app.layoutMode
             ZStack {
-                baseLayout(mode)
+                baseLayout(mode, width: geo.size.width)
                 drawerOverlays(mode, width: geo.size.width)
                 if app.showCommandPalette {
                     CommandPalette()
@@ -41,7 +41,7 @@ struct RootView: View {
     /// Inline panes for the current width. Side panes that don't fit are promoted
     /// to overlay drawers in `drawerOverlays`.
     @ViewBuilder
-    private func baseLayout(_ mode: AppModel.LayoutMode) -> some View {
+    private func baseLayout(_ mode: AppModel.LayoutMode, width: CGFloat) -> some View {
         HStack(spacing: 0) {
             if !mode.isCompact {
                 SessionsSidebar()
@@ -55,10 +55,26 @@ struct RootView: View {
             if mode.isWide && app.showRightSidebar {
                 Divider().overlay(Theme.border)
                 ContextPane()
-                    .frame(width: 360)
+                    .frame(width: rightPaneWidth(wide: true, available: width))
                     .transition(.move(edge: .trailing))
             }
         }
+    }
+
+    /// The terminal and file viewer need more horizontal room than the git/context
+    /// tabs, so the right pane widens for those tabs (capped so it never crowds out
+    /// the chat column).
+    private func rightPaneWidth(wide: Bool, available: CGFloat) -> CGFloat {
+        let target: CGFloat
+        switch app.rightTab {
+        case .terminal: target = 560
+        case .files:    target = 480
+        default:        target = 360
+        }
+        if wide {
+            return min(target, max(360, available * 0.55))
+        }
+        return min(target, available * 0.92)
     }
 
     /// Sessions (left) and context (right) drawers shown over the chat when the
@@ -85,7 +101,7 @@ struct RootView: View {
                 Spacer(minLength: 0)
                 Divider().overlay(Theme.border)
                 ContextPane()
-                    .frame(width: min(380, width * 0.86))
+                    .frame(width: rightPaneWidth(wide: false, available: width))
                     .background(Theme.panel)
             }
             .transition(.move(edge: .trailing))

@@ -428,11 +428,12 @@ private struct FileViewer: View {
 
     private var codeView: some View {
         let gutter = max(2, String(lines.count).count)
+        let gutterWidth = CGFloat(gutter) * 7.4 + 4
         return ScrollViewReader { proxy in
             ScrollView([.vertical, .horizontal]) {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { idx, runs in
-                        lineRow(idx: idx, runs: runs, gutter: gutter)
+                        lineRow(idx: idx, runs: runs, gutterWidth: gutterWidth)
                             .id(idx)
                     }
                     if truncated {
@@ -443,7 +444,6 @@ private struct FileViewer: View {
                     }
                 }
                 .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onChange(of: current) { _ in scrollToCurrent(proxy) }
             .onChange(of: scrollRequest) { target in
@@ -456,11 +456,12 @@ private struct FileViewer: View {
     // A one-shot scroll target consumed by codeView's onChange.
     @State private var scrollRequest: Int? = nil
 
-    private func lineRow(idx: Int, runs: [CodeRun], gutter: Int) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(String(format: "%\(gutter)d", idx + 1))
+    private func lineRow(idx: Int, runs: [CodeRun], gutterWidth: CGFloat) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(String(idx + 1))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Theme.textTertiary)
+                .frame(width: gutterWidth, alignment: .trailing)
             Text(attributed(idx: idx, runs: runs))
                 .font(.system(size: 12, design: .monospaced))
                 .fixedSize(horizontal: true, vertical: false)
