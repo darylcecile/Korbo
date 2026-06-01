@@ -224,22 +224,62 @@ struct SessionsSidebar: View {
             emptyState(icon: "magnifyingglass", title: "No matches",
                        subtitle: store.sessionQuery.isEmpty ? "" : "No sessions match “\(store.sessionQuery)”.")
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(groups) { group in
-                        sectionHeader(group)
+            List {
+                ForEach(groups) { group in
+                    Section {
                         if !collapsed.contains(group.id) {
                             ForEach(group.sessions) { session in
                                 sessionRow(session)
                                     .id("\(session.id)|\(session.isShared)|\(session.isArchived)|\(store.isPinned(session.id))")
+                                    .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                        if !isSelectMode { archiveSwipeButton(session) }
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        if !isSelectMode { deleteSwipeButton(session) }
+                                    }
                             }
                         }
+                    } header: {
+                        sectionHeader(group)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                            .listRowBackground(Color.clear)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 16)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Theme.panel)
+            .environment(\.defaultMinListRowHeight, 0)
         }
+    }
+
+    /// Leading swipe: archive or unarchive via the existing API-backed store
+    /// method (mirrors the row context menu and bulk-archive action).
+    @ViewBuilder
+    private func archiveSwipeButton(_ session: OCSession) -> some View {
+        Button {
+            Task { await store.setSessionArchived(session.id, archived: !session.isArchived) }
+        } label: {
+            Label(session.isArchived ? "Unarchive" : "Archive",
+                  systemImage: session.isArchived ? "tray.and.arrow.up" : "archivebox")
+        }
+        .tint(Theme.accent)
+    }
+
+    /// Trailing swipe: route through the delete confirmation dialog rather than
+    /// deleting immediately. A full swipe sets `deleteTarget`, surfacing the
+    /// destructive confirmation before `store.deleteSession` runs.
+    @ViewBuilder
+    private func deleteSwipeButton(_ session: OCSession) -> some View {
+        Button(role: .destructive) {
+            deleteTarget = session
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .tint(Theme.removed)
     }
 
     private func sessionRow(_ session: OCSession) -> some View {

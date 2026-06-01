@@ -166,7 +166,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [~] P1 Appearance: fonts (UI/mono), size, density, radius — text-size (Small/Standard/Large/X-Large via `dynamicTypeSize`) + density (Comfortable/Compact) pickers added in Settings; effect limited to Dynamic-Type-respecting text/controls since most app fonts are hardcoded `.system(size:)` (documented in the Settings footer note); custom font family + radius still pending
 - [~] P1 Chat settings (default model/agent, context length, render mode, limits) — new Settings → Chat section: "Render markdown" toggle (off ⇒ assistant `.text` parts render as raw selectable monospaced source; `MessageView` observes `AppearanceStore` so it recolours live — verified on device flipping the Alpha compaction summary to raw `## Goal` markdown) persisted to UserDefaults; default model + default agent surfaced read-only (sourced from composer pickers). Context length + per-session limits still pending
 - [ ] P1 Notifications: enable, per‑template text, sound
-- [ ] P1 Sessions: retention (archive/delete, period, auto‑cleanup)
+- [~] P1 Sessions: retention — swipe-to-archive (leading, `PATCH /session/{id}` `time.archived`) and swipe-to-delete (trailing, routed through the destructive confirmation dialog → `DELETE /session/{id}`) on session rows; sidebar converted to a `List` to host the swipe actions; both API-backed; verified on device. Retention period / auto-cleanup still pending
 - [~] P1 Keyboard shortcuts: view (⌘/ cheat sheet + command-palette "Keyboard Shortcuts" action; grouped Navigation/Panels/Session/App with key chips). Customize + conflict detection still pending.
 - [ ] P1 Git identities editor
 - [ ] P2 Behavior: auto‑commit/PR/branch/stash, permission auto‑rules
