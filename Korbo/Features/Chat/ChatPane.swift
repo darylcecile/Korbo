@@ -67,6 +67,8 @@ struct ChatPane: View {
                 .buttonStyle(.plain)
             }
 
+            contextRing
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(session?.title ?? "New session")
                     .font(.system(size: 15, weight: .semibold)).lineLimit(1)
@@ -83,8 +85,6 @@ struct ChatPane: View {
                 .foregroundStyle(Theme.textTertiary)
             }
             Spacer()
-
-            contextRing
 
             Button { app.showRightSidebar.toggle() } label: {
                 Image(systemName: "sidebar.right")
