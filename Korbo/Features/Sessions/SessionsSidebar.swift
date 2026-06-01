@@ -71,6 +71,14 @@ struct SessionsSidebar: View {
                 .buttonStyle(.plain)
                 .disabled(!store.status.isConnected)
             Button {
+                withAnimation(.easeInOut(duration: 0.15)) { app.toggleTerminal() }
+            } label: {
+                Image(systemName: "terminal")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(app.showTerminal ? Theme.accent : Theme.textSecondary)
+            .disabled(!store.status.isConnected)
+            Button {
                 withAnimation(.easeInOut(duration: 0.15)) { showSearch.toggle() }
                 if !showSearch { store.sessionQuery = "" }
             } label: {
@@ -162,6 +170,7 @@ struct SessionsSidebar: View {
         let pinned = store.isPinned(session.id)
         return Button {
             Task { await store.selectSession(session.id) }
+            app.showTerminal = false
             if app.layoutMode.isCompact { app.sessionsDrawerOpen = false }
         } label: {
             VStack(alignment: .leading, spacing: 3) {

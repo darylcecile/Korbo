@@ -49,8 +49,14 @@ struct RootView: View {
                 Divider().overlay(Theme.border)
             }
 
-            ChatPane()
-                .frame(maxWidth: .infinity)
+            Group {
+                if app.showTerminal {
+                    TerminalPane()
+                } else {
+                    ChatPane()
+                }
+            }
+            .frame(maxWidth: .infinity)
 
             if mode.isWide && app.showRightSidebar {
                 Divider().overlay(Theme.border)
@@ -61,16 +67,11 @@ struct RootView: View {
         }
     }
 
-    /// The terminal and file viewer need more horizontal room than the git/context
-    /// tabs, so the right pane widens for those tabs (capped so it never crowds out
-    /// the chat column).
+    /// The file viewer needs more horizontal room than the git/context tabs, so
+    /// the right pane widens for the files tab (capped so it never crowds out the
+    /// chat column).
     private func rightPaneWidth(wide: Bool, available: CGFloat) -> CGFloat {
-        let target: CGFloat
-        switch app.rightTab {
-        case .terminal: target = 560
-        case .files:    target = 480
-        default:        target = 360
-        }
+        let target: CGFloat = app.rightTab == .files ? 480 : 360
         if wide {
             return min(target, max(360, available * 0.55))
         }
@@ -146,10 +147,10 @@ private struct GlobalShortcuts: View {
                     .keyboardShortcut("1", modifiers: .command)
                 Button("Show Files") { app.showRightTab(.files) }
                     .keyboardShortcut("2", modifiers: .command)
-                Button("Show Terminal") { app.showRightTab(.terminal) }
-                    .keyboardShortcut("3", modifiers: .command)
                 Button("Show Context") { app.showRightTab(.context) }
-                    .keyboardShortcut("4", modifiers: .command)
+                    .keyboardShortcut("3", modifiers: .command)
+                Button("Toggle Terminal") { app.toggleTerminal() }
+                    .keyboardShortcut("t", modifiers: .command)
                 Button("Settings") { app.showSettingsSheet = true }
                     .keyboardShortcut(",", modifiers: .command)
             }

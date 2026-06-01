@@ -9,6 +9,12 @@ final class AppModel: ObservableObject {
     @Published var showConnectionSheet = false
     @Published var showSettingsSheet = false
 
+    /// When true the middle column shows the terminal instead of the chat. The
+    /// terminal lives in the wide centre pane (toggled from the sessions toolbar)
+    /// so it gets real width — and the right sidebar can still be collapsed to
+    /// widen it further.
+    @Published var showTerminal = false
+
     /// Command palette (⌘P / ⌘K) overlay.
     @Published var showCommandPalette = false
 
@@ -27,6 +33,7 @@ final class AppModel: ObservableObject {
     @Published var sessionsDrawerOpen = false
 
     func toggleCommandPalette() { showCommandPalette.toggle() }
+    func toggleTerminal() { showTerminal.toggle() }
     func focusComposer() { focusComposerToken &+= 1 }
     func toggleSessionsDrawer() { sessionsDrawerOpen.toggle() }
 
@@ -67,14 +74,13 @@ final class AppModel: ObservableObject {
     }
 
     enum RightTab: String, CaseIterable, Identifiable {
-        case git, files, terminal, context
+        case git, files, context
         var id: String { rawValue }
         var title: String { rawValue }
         var systemImage: String {
             switch self {
             case .git: return "arrow.triangle.branch"
             case .files: return "folder"
-            case .terminal: return "terminal"
             case .context: return "doc.text.magnifyingglass"
             }
         }

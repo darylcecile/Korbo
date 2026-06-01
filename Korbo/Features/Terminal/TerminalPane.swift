@@ -8,6 +8,7 @@ import SwiftTerm
 /// resize; the live byte stream is owned by `TerminalHostView` below.
 struct TerminalPane: View {
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var app: AppModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,6 +48,12 @@ struct TerminalPane: View {
                 }
                 .buttonStyle(.plain)
             }
+            Divider().frame(height: 18).overlay(Theme.border)
+            Button { app.showRightSidebar.toggle() } label: {
+                Image(systemName: "sidebar.right").font(.system(size: 14))
+                    .foregroundStyle(app.showRightSidebar ? Theme.accent : Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

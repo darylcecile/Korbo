@@ -17,8 +17,6 @@ struct ContextPane: View {
                 GitPane()
             case .files:
                 FilesPane()
-            case .terminal:
-                TerminalPane()
             case .context:
                 contextTab
             }

@@ -19,9 +19,9 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Top bar: "open in editor" deep link (vscode://, etc.)
 - [ ] P1 Top bar: local/remote (server) selector
 - [ ] P0 Top bar: account/avatar menu
-- [ ] P1 Bottom terminal dock (toggle, resize)
+- [x] P1 Bottom terminal dock (toggle, resize) — repositioned: terminal toggles into the **centre column** (sessions‑toolbar terminal button / ⌘T) so it gets full chat‑pane width; right sidebar can be collapsed from the terminal header to widen it edge‑to‑edge
 - [x] P1 Command palette (⌘P): sessions, files, commands, settings, actions — `CommandPalette.swift`, fuzzy file search (`/find/file`), grouped Actions/Sessions/Files, ↑↓ nav + ↵ run + Esc, blurred overlay
-- [x] P1 Hardware‑keyboard shortcuts (mirror openchamber set where sensible) — `GlobalShortcuts` in RootView: ⌘P palette, ⌘\ toggle right panel, ⌘1–4 git/files/terminal/context, ⌘N new session, ⌘⇧L focus composer, ⌘, settings, ⌘↵ send
+- [x] P1 Hardware‑keyboard shortcuts (mirror openchamber set where sensible) — `GlobalShortcuts` in RootView: ⌘P palette, ⌘\ toggle right panel, ⌘1–3 git/files/context, ⌘T toggle terminal, ⌘N new session, ⌘⇧L focus composer, ⌘, settings, ⌘↵ send
 - [ ] P2 Mini chat window / multi‑window (Stage Manager)
 - [ ] P0 Dark theme baseline; light/system later
 
@@ -176,6 +176,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Connect over WebSocket (live I/O) — `ws://host/pty/{id}/connect`, SwiftTerm renderer, live ANSI colors + bidirectional stdin
 - [x] P1 Copy/paste; theme‑matched; font control — SwiftTerm input-accessory keyboard, monospaced font, dark theme‑matched
 - [x] P2 Multiple terminal tabs — header tab strip over running PTYs, "+" spawns new, trash kills
+- [x] P1 Terminal in centre column — sessions‑toolbar terminal toggle (⌘T) swaps chat→terminal for full width; right‑sidebar collapse toggle in the terminal header widens it edge‑to‑edge; selecting a session returns to chat
 - Deferred: pinch-to-zoom font sizing, persistent scrollback search (not exposed by opencode PTY API)
 
 ## 10. Connection, sync & realtime
