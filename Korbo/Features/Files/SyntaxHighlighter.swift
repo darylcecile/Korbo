@@ -5,14 +5,17 @@ import SwiftUI
 enum CodeTokenKind: Equatable {
     case plain, comment, string, number, keyword, type
 
+    /// Resolves against the user-selected `CodeTheme` (AppearanceStore is
+    /// observed at the app root, so changing the theme recolours live).
     var color: Color {
+        let p = AppearanceStore.shared.codeTheme.palette
         switch self {
-        case .plain:   return Theme.textPrimary
-        case .comment: return Color(hex: 0x6A9955)
-        case .string:  return Color(hex: 0xCE9178)
-        case .number:  return Color(hex: 0xB5CEA8)
-        case .keyword: return Color(hex: 0x569CD6)
-        case .type:    return Color(hex: 0x4EC9B0)
+        case .plain:   return p.plain ?? Theme.textPrimary
+        case .comment: return p.comment
+        case .string:  return p.string
+        case .number:  return p.number
+        case .keyword: return p.keyword
+        case .type:    return p.type
         }
     }
 }

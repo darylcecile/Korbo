@@ -146,6 +146,15 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+
+            // Code theme
+            Picker("Code theme", selection: $appearance.codeTheme) {
+                ForEach(AppearanceStore.CodeTheme.allCases) { theme in
+                    Text(theme.label).tag(theme)
+                }
+            }
+            CodeThemePreview(palette: appearance.codeTheme.palette)
+                .padding(.vertical, 2)
         } header: {
             Text("Appearance")
         } footer: {
@@ -341,5 +350,35 @@ struct SettingsView: View {
     }
     private var removeAlertBinding: Binding<Bool> {
         Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } })
+    }
+}
+
+/// Small inline swatch row that previews the selected code theme's token
+/// colours, so the picker shows its effect without leaving Settings.
+private struct CodeThemePreview: View {
+    let palette: AppearanceStore.CodeTheme.Palette
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("func ").foregroundStyle(palette.keyword)
+            Text("greet").foregroundStyle(palette.type)
+            Text("() { ").foregroundStyle(palette.plain ?? Theme.textPrimary)
+            Text("// hi").foregroundStyle(palette.comment)
+            Text(" ").foregroundStyle(palette.plain ?? Theme.textPrimary)
+            Text("\"x\"").foregroundStyle(palette.string)
+            Text(" ").foregroundStyle(palette.plain ?? Theme.textPrimary)
+            Text("42").foregroundStyle(palette.number)
+            Text(" }").foregroundStyle(palette.plain ?? Theme.textPrimary)
+        }
+        .font(.system(size: 12.5, design: .monospaced))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.panelRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Code theme preview")
     }
 }

@@ -135,7 +135,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] ~~P1 Context menu: open / new file / new folder / rename / delete~~ — deferred: opencode file API is **read-only** (no write/create/rename/delete endpoint)
 - [ ] ~~P1 File editor (edit + save)~~ — deferred: no write API (agent edits files via tools, not REST)
 - [ ] ~~P1 **Autosave vs manual‑save toggle** + dirty indicator + ⌘S~~ — deferred: no write API
-- [x] P2 Syntax highlighting — dependency-free lexer (`SyntaxHighlighter.swift`), VS Code Dark+ palette, per-extension language detection
+- [x] P2 Syntax highlighting — dependency-free lexer (`SyntaxHighlighter.swift`), selectable palette (Dark+/Dracula/Solarized/Nord via AppearanceStore.codeTheme), per-extension language detection
 - [x] P2 Multiple open files (tabs) — `OpenFile` tab model, tab strip with per-tab close (unsaved markers N/A: viewer is read-only)
 - [x] P2 Find & go‑to‑line — find bar (count, prev/next nav, highlight), go-to-line jump (replace N/A: read-only viewer)
 - [ ] P2 Minimap / code folding
@@ -161,7 +161,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 MCP servers: add/connect/disconnect/remove (+ OAuth) — deferred (config-file only)
 - [ ] P2 Plugins: install/enable/disable/uninstall — deferred (config-file only)
 - [x] P1 Appearance: theme (light/dark/system) — `AppearanceStore` with Dark/Midnight dark variants (no light theme — app is dark-only by design) + 6 accent colors (amber/blue/green/purple/pink/graphite); `Theme` tokens are now computed from the store, RootView is keyed by `accent-theme` so all static `Theme.*` reads re-resolve live; Settings → Appearance section with accent swatches + segmented theme picker; verified on device (accent + theme change propagate app-wide including message rows, both directions)
-- [ ] P1 Appearance: syntax theme + custom themes (import/export)
+- [~] P1 Appearance: syntax theme + custom themes (import/export) — selectable code theme in Settings → Appearance (Dark+, Dracula, Solarized, Nord) with an official-palette per scheme; resolves through `CodeTokenKind.color` so chat code blocks + the file viewer recolour live (verified on device with project.yml → Dracula); persisted to UserDefaults. Custom theme import/export still pending
 - [~] P1 Appearance: fonts (UI/mono), size, density, radius — text-size (Small/Standard/Large/X-Large via `dynamicTypeSize`) + density (Comfortable/Compact) pickers added in Settings; effect limited to Dynamic-Type-respecting text/controls since most app fonts are hardcoded `.system(size:)` (documented in the Settings footer note); custom font family + radius still pending
 - [ ] P1 Chat settings (default model/agent, context length, render mode, limits)
 - [ ] P1 Notifications: enable, per‑template text, sound
