@@ -359,7 +359,7 @@ struct ChatPane: View {
                                   systemImage: speech.isDictating ? "mic.fill" : "mic")
                         }
                     } label: {
-                        Image(systemName: speech.isDictating ? "mic.fill" : "plus.circle")
+                        Image(systemName: speech.isDictating ? "mic.fill" : "plus")
                             .foregroundStyle(speech.isDictating ? Theme.removed : Theme.textSecondary)
                     }
                     .menuStyle(.button)
