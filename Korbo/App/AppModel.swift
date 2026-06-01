@@ -26,9 +26,60 @@ final class AppModel: ObservableObject {
     /// The chat composer text, lifted here so the command palette (and future
     /// `@`/`/`/`!` autocomplete) can prefill it. `ChatPane` binds its TextField
     /// to this and clears it on send.
-    @Published var composerDraft: String = ""
+    @Published var composerDraft: String = "" {
+        didSet { drafts[currentDraftSessionID ?? Self.noSessionDraftKey] = composerDraft }
+    }
     /// Bumped to request keyboard focus on the composer; `ChatPane` observes it.
     @Published var focusComposerToken = 0
+
+    // MARK: Per-session composer drafts
+
+    /// Unsent composer text kept per session so switching sessions never loses or
+    /// leaks a draft. Persisted to `UserDefaults` so drafts survive relaunches.
+    private var drafts: [String: String] = AppModel.loadDrafts()
+    /// The session whose draft `composerDraft` currently mirrors (`nil` → no
+    /// session selected; stored under `noSessionDraftKey`).
+    private var currentDraftSessionID: String?
+    private static let draftsKey = "korbo.composerDrafts"
+    private static let noSessionDraftKey = "__none__"
+
+    /// Swap the live `composerDraft` to the given session's stored draft, saving
+    /// the outgoing session's text first. Call when the selected session changes.
+    func bindDraft(to sessionID: String?) {
+        let key = sessionID ?? Self.noSessionDraftKey
+        guard key != (currentDraftSessionID ?? Self.noSessionDraftKey) || currentDraftSessionID == nil else { return }
+        currentDraftSessionID = sessionID
+        // Assigning re-triggers `didSet`, but it writes the same value back under
+        // the same key, so the map stays consistent.
+        composerDraft = drafts[key] ?? ""
+        persistDrafts()
+    }
+
+    /// Drop a session's stored draft (e.g. after a successful send) and clear the
+    /// live field if it belongs to that session.
+    func clearDraft(for sessionID: String?) {
+        let key = sessionID ?? Self.noSessionDraftKey
+        drafts[key] = nil
+        if (currentDraftSessionID ?? Self.noSessionDraftKey) == key { composerDraft = "" }
+        persistDrafts()
+    }
+
+    /// Persist the draft map. Cheap (small string dict); called on session switch,
+    /// send, and app background rather than on every keystroke.
+    func persistDrafts() {
+        var pruned = drafts
+        for (k, v) in pruned where v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { pruned[k] = nil }
+        drafts = pruned
+        if let data = try? JSONEncoder().encode(pruned) {
+            UserDefaults.standard.set(data, forKey: Self.draftsKey)
+        }
+    }
+
+    private static func loadDrafts() -> [String: String] {
+        guard let data = UserDefaults.standard.data(forKey: draftsKey),
+              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return map
+    }
 
     /// Width-derived layout mode (drives adaptive 3/2/1-pane shell for Split View
     /// and Stage Manager). Updated by `RootView` from a `GeometryReader`.

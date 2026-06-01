@@ -51,6 +51,8 @@ struct ChatPane: View {
                 }
         }
         .background(Theme.bg)
+        .onAppear { app.bindDraft(to: store.selectedSessionID) }
+        .onChange(of: store.selectedSessionID) { _, id in app.bindDraft(to: id) }
     }
 
     // MARK: Header
@@ -627,7 +629,7 @@ struct ChatPane: View {
         let toSend = attachments
         guard canSubmit else { return }
         clearSuggestions()
-        app.composerDraft = ""
+        app.clearDraft(for: store.selectedSessionID)
         attachments = []
         // Route a bare `/command` invocation to the command endpoint; otherwise
         // send a normal prompt.
