@@ -7,6 +7,7 @@ struct SessionsSidebar: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var showSearch = false
+    @State private var showProjectPicker = false
     @State private var collapsed: Set<String> = []
     @State private var renameTarget: OCSession?
     @State private var renameText: String = ""
@@ -62,6 +63,10 @@ struct SessionsSidebar: View {
         .sheet(item: $shareItem) { item in
             ActivityView(items: [URL(string: item.url) ?? item.url as Any])
         }
+        .sheet(isPresented: $showProjectPicker) {
+            ProjectPickerView()
+                .environmentObject(store)
+        }
         .confirmationDialog(
             "Delete \(selectedIDs.count) session\(selectedIDs.count == 1 ? "" : "s")?",
             isPresented: $showBulkDeleteConfirm,
@@ -92,20 +97,8 @@ struct SessionsSidebar: View {
     private var projectBar: some View {
         if !isSelectMode, store.status.isConnected,
            store.selectedProjectName != nil || store.projects.count > 1 {
-            Menu {
-                Section("Project") {
-                    ForEach(store.projects) { project in
-                        Button {
-                            Task { await store.switchProject(to: project.scopeDirectory) }
-                        } label: {
-                            if project.scopeDirectory == store.selectedProjectDirectory {
-                                Label(project.name, systemImage: "checkmark")
-                            } else {
-                                Text(project.name)
-                            }
-                        }
-                    }
-                }
+            Button {
+                showProjectPicker = true
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "folder")
@@ -125,8 +118,8 @@ struct SessionsSidebar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panelRaised))
+                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
             .buttonStyle(.plain)
             .disabled(store.projects.count <= 1)
             .padding(.horizontal, 12)
