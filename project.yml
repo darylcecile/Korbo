@@ -1,0 +1,92 @@
+name: Korbo
+options:
+  bundleIdPrefix: ai.korbo
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.11.2
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2" # iPhone + iPad
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  Korbo:
+    type: application
+    platform: iOS
+    sources:
+      - path: Korbo
+        excludes:
+          - "Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.Korbo
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Korbo/Info.plist
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Korbo uses the microphone for voice dictation into the composer."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Korbo uses speech recognition to transcribe your dictation into prompt text."
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsMultipleScenes: YES
+        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+        INFOPLIST_KEY_UIRequiresFullScreen: NO
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+    dependencies:
+      - package: SwiftTerm
+      - target: KorboWidgets
+
+  KorboWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: KorboWidgets
+      - path: Korbo/Shared/KorboActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.Korbo.KorboWidgets
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        INFOPLIST_FILE: KorboWidgets/Info.plist
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+        SKIP_INSTALL: YES
+
+  KorboTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: KorboTests
+    dependencies:
+      - target: Korbo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.KorboTests
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Korbo:
+    build:
+      targets:
+        Korbo: all
+    run:
+      config: Debug
+    test:
+      targets:
+        - KorboTests

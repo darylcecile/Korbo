@@ -1,0 +1,581 @@
+import Foundation
+
+/// Core opencode data models. Field names and shapes mirror the OpenAPI schema in
+/// opencode `packages/sdk/openapi.json` (verified against the live spec). Optional
+/// fields are modelled defensively so partial / future payloads still decode.
+
+// MARK: - Session
+
+struct OCSession: Codable, Identifiable, Hashable {
+    let id: String
+    var slug: String?
+    var title: String?
+    var projectID: String?
+    var workspaceID: String?
+    var directory: String?
+    var path: String?
+    var parentID: String?
+    var agent: String?
+    var version: String?
+    var cost: Double?
+    var summary: Summary?
+    var tokens: Tokens?
+    var model: OCModelRef?
+    var share: Share?
+    var time: Time?
+    var revert: Revert?
+
+    struct Summary: Codable, Hashable {
+        var additions: Double?
+        var deletions: Double?
+        var files: Double?
+    }
+    struct Tokens: Codable, Hashable {
+        var input: Double?
+        var output: Double?
+        var reasoning: Double?
+    }
+    struct Share: Codable, Hashable {
+        var url: String?
+    }
+    struct Time: Codable, Hashable {
+        var created: Double?
+        var updated: Double?
+        var archived: Double?
+    }
+
+    /// Present when the session has been reverted to an earlier message.
+    /// `messageID` is the first reverted (hidden) message; everything from it
+    /// onward is undone until `unrevert`.
+    struct Revert: Codable, Hashable {
+        var messageID: String?
+        var partID: String?
+        var snapshot: String?
+        var diff: String?
+    }
+
+    /// Display name for the session's project (last path component of directory).
+    var projectName: String? {
+        guard let directory, !directory.isEmpty else { return nil }
+        return (directory as NSString).lastPathComponent
+    }
+
+    /// Worktree label for the session, shown as `<parent>/<leaf>` so that
+    /// multiple worktrees of the same repository (which share a parent folder
+    /// but differ in leaf, e.g. `Korbo/feature-a` vs `Korbo/feature-b`) stay
+    /// distinguishable. Falls back to the leaf alone, or "No worktree" when the
+    /// session has no directory. NOTE: opencode's session API carries the
+    /// worktree `directory` but not a git branch, and `/vcs` only reports the
+    /// branch of the server's active directory — so grouping is by worktree
+    /// directory rather than by branch.
+    var worktreeLabel: String {
+        guard let directory, !directory.isEmpty else { return "No worktree" }
+        let comps = directory.split(separator: "/").map(String.init)
+        guard let leaf = comps.last else { return "No worktree" }
+        if comps.count >= 2 { return "\(comps[comps.count - 2])/\(leaf)" }
+        return leaf
+    }
+
+    var additions: Int { Int(summary?.additions ?? 0) }
+    var deletions: Int { Int(summary?.deletions ?? 0) }
+
+    /// Most recent activity timestamp (updated, falling back to created).
+    var lastActivity: Date? {
+        let ms = time?.updated ?? time?.created
+        guard let ms else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000)
+    }
+
+    var isArchived: Bool { (time?.archived ?? 0) > 0 }
+
+    /// Whether this session has a published public share link.
+    var isShared: Bool { !(share?.url ?? "").isEmpty }
+    var shareURL: String? { share?.url }
+}
+
+struct OCModelRef: Codable, Hashable {
+    var providerID: String
+    var modelID: String
+    var variant: String?
+}
+
+// MARK: - Project
+
+/// A project (workspace root) hosted by an opencode server, as returned by
+/// `GET /project` and `GET /project/current`. A single server can serve many
+/// projects; requests select one via the `?directory=` query param (the
+/// project's `worktree`).
+struct OCProject: Codable, Identifiable, Hashable {
+    let id: String
+    var worktree: String
+    var vcs: String?
+    var sandboxes: [String]?
+
+    /// The directory to send as `?directory=` so the server scopes sessions,
+    /// vcs and files to this project. opencode stores sessions against the
+    /// exact working directory, which for sandboxed projects is the sandbox —
+    /// not the top-level worktree. Falls back to the worktree when no sandbox.
+    var scopeDirectory: String {
+        if let sandbox = sandboxes?.first(where: { !$0.isEmpty }) { return sandbox }
+        return worktree
+    }
+
+    /// Display name — the last path component of the worktree, except for
+    /// git-internal worktrees (`…/.git/modules/…`) whose worktree leaf is the
+    /// meaningless "modules"; there we use the sandbox leaf instead.
+    var name: String {
+        let source = worktree.contains("/.git/") ? scopeDirectory : worktree
+        let leaf = (source as NSString).lastPathComponent
+        return leaf.isEmpty ? source : leaf
+    }
+}
+
+
+// MARK: - Messages & parts
+
+enum OCMessageRole: String, Codable { case user, assistant }
+
+/// A message together with its ordered parts, as returned by
+/// `GET /session/{id}/message` (`[{ info, parts }]`).
+struct OCMessageItem: Codable, Identifiable, Hashable {
+    var info: OCMessage
+    var parts: [OCPart]
+    var id: String { info.id }
+}
+
+/// Union of UserMessage / AssistantMessage decoded leniently into one struct.
+struct OCMessage: Codable, Identifiable, Hashable {
+    let id: String
+    var sessionID: String
+    var role: OCMessageRole
+    var time: Time?
+    var agent: String?
+    var model: OCModelRef?          // user message
+    var providerID: String?         // assistant message
+    var modelID: String?            // assistant message
+    var mode: String?               // assistant message
+    var cost: Double?
+    var error: OCMessageError?
+    var tokens: Usage?
+
+    /// Token accounting carried on an assistant message. `total` already includes
+    /// input + output + reasoning + cache, i.e. the context the model processed
+    /// for that turn (the basis for the context-window usage bar).
+    struct Usage: Codable, Hashable {
+        var total: Double?
+        var input: Double?
+        var output: Double?
+        var reasoning: Double?
+        var cache: Cache?
+
+        struct Cache: Codable, Hashable {
+            var read: Double?
+            var write: Double?
+        }
+
+        /// Cached tokens (read + write) surfaced as one bucket for the bar.
+        var cacheTotal: Double { (cache?.read ?? 0) + (cache?.write ?? 0) }
+        /// Best-effort total even if the server omits the precomputed field.
+        var resolvedTotal: Double {
+            total ?? ((input ?? 0) + (output ?? 0) + (reasoning ?? 0) + cacheTotal)
+        }
+    }
+
+    struct Time: Codable, Hashable {
+        var created: Double?
+        var completed: Double?
+    }
+
+    var createdAt: Date? {
+        guard let ms = time?.created else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000)
+    }
+    var completedAt: Date? {
+        guard let ms = time?.completed else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000)
+    }
+    /// Elapsed wall time for an assistant turn, if completed.
+    var duration: TimeInterval? {
+        guard let c = createdAt, let e = completedAt else { return nil }
+        return e.timeIntervalSince(c)
+    }
+    /// Best-effort model label for display.
+    var modelLabel: String? {
+        if let m = model { return m.modelID }
+        if let modelID { return modelID }
+        return nil
+    }
+}
+
+/// Assistant error payload (decoded loosely — opencode unions several error types).
+struct OCMessageError: Codable, Hashable {
+    var name: String?
+    var message: String?
+
+    private enum CodingKeys: String, CodingKey { case name, data, message }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try? c.decode(String.self, forKey: .name)
+        if let direct = try? c.decode(String.self, forKey: .message) {
+            message = direct
+        } else if let data = try? c.decode(JSONValue.self, forKey: .data) {
+            message = data["message"]?.stringValue
+        }
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(message, forKey: .message)
+    }
+}
+
+/// Message part union. opencode parts: text, reasoning, file, tool, step-start,
+/// step-finish, snapshot, patch, agent, subtask, retry, compaction.
+enum OCPartType: String, Codable {
+    case text, reasoning, file, tool
+    case stepStart = "step-start"
+    case stepFinish = "step-finish"
+    case snapshot, patch, agent, subtask, retry, compaction
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = OCPartType(rawValue: raw) ?? .unknown
+    }
+}
+
+/// A single message part decoded leniently across the part union. Only the fields
+/// Korbo renders today are surfaced; the rest remain in `state`/raw payloads.
+struct OCPart: Codable, Identifiable, Hashable {
+    let id: String
+    var sessionID: String? = nil
+    var messageID: String? = nil
+    var type: OCPartType
+    var text: String? = nil           // text / reasoning
+    var synthetic: Bool? = nil
+    var callID: String? = nil         // tool
+    var tool: String? = nil           // tool name
+    var state: OCToolState? = nil     // tool
+    var filename: String? = nil       // file
+    var mime: String? = nil           // file
+    var url: String? = nil            // file
+    var auto: Bool? = nil             // compaction (auto vs manual)
+
+    var isVisibleText: Bool {
+        type == .text && (synthetic != true) && !(text ?? "").isEmpty
+    }
+}
+
+/// Tool execution lifecycle state (ToolStatePending/Running/Completed/Error).
+struct OCToolState: Codable, Hashable {
+    var status: OCToolStatus
+    var title: String?
+    var output: String?
+    var error: String?
+    var input: JSONValue?
+    /// Tool-specific result detail (e.g. edit `diff`, bash `exit`/`output`,
+    /// grep `matches`, todowrite `todos`, task `sessionId`/`model`).
+    var metadata: JSONValue?
+    /// Execution timing (`start`/`end` epoch ms) used to show a duration badge.
+    var time: OCToolTime?
+}
+
+/// Tool execution timing in epoch milliseconds.
+struct OCToolTime: Codable, Hashable {
+    var start: Double?
+    var end: Double?
+}
+
+enum OCToolStatus: String, Codable {
+    case pending, running, completed, error, unknown
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = OCToolStatus(rawValue: raw) ?? .unknown
+    }
+}
+
+// MARK: - Providers / models / agents / commands
+
+struct OCProvidersResponse: Codable {
+    var all: [OCProvider]
+    var connected: [String]
+    /// `providerID → default modelID`, as recommended by the opencode server.
+    var defaultModels: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case all, connected
+        case defaultModels = "default"
+    }
+}
+
+struct OCProvider: Codable, Identifiable, Hashable {
+    let id: String
+    var name: String?
+    var models: [String: OCModel]?
+}
+
+struct OCModel: Codable, Identifiable, Hashable {
+    let id: String
+    var name: String?
+    var providerID: String?
+    var limit: Limit?
+    var capabilities: Capabilities?
+    var variants: [String: JSONValue]?
+
+    /// Model context/output token limits (from models.dev via `/provider`).
+    struct Limit: Codable, Hashable {
+        var context: Double?
+        var output: Double?
+    }
+
+    /// Model capability flags (only `reasoning` is used; others decode silently).
+    struct Capabilities: Codable, Hashable {
+        var reasoning: Bool?
+    }
+
+    /// Whether this model supports reasoning variants.
+    var supportsReasoning: Bool {
+        (capabilities?.reasoning ?? false) && !variantNames.isEmpty
+    }
+
+    /// Sorted variant keys in canonical order: none < low < medium < high < xhigh.
+    var variantNames: [String] {
+        guard let variants else { return [] }
+        return Array(variants.keys).sorted(by: Self.variantOrder)
+    }
+
+    /// Comparator for canonical variant ordering.
+    static func variantOrder(_ a: String, _ b: String) -> Bool {
+        let order = ["none", "low", "medium", "high", "xhigh"]
+        let ai = order.firstIndex(of: a)
+        let bi = order.firstIndex(of: b)
+        switch (ai, bi) {
+        case let (.some(ia), .some(ib)): return ia < ib
+        case (.some, .none): return true
+        case (.none, .some): return false
+        case (.none, .none): return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+        }
+    }
+}
+
+struct OCAgent: Codable, Identifiable, Hashable {
+    var id: String { name }
+    let name: String
+    var description: String?
+    var mode: String?
+    var hidden: Bool?
+}
+
+struct OCCommand: Codable, Identifiable, Hashable {
+    var id: String { name }
+    let name: String
+    var description: String?
+    var agent: String?
+}
+
+/// A tool permission request raised mid-run (e.g. a bash/edit tool asking for
+/// approval). Decoded leniently; opencode carries extra metadata Korbo ignores.
+struct OCPermission: Codable, Identifiable, Hashable {
+    let id: String
+    var sessionID: String
+    var messageID: String?
+    var callID: String?
+    var type: String?
+    var title: String?
+    var pattern: String?
+}
+
+/// A question the agent raises mid-run (`question.asked`), awaiting the user's
+/// selection from a set of options. Mirrors the permission flow but supports
+/// multiple discrete questions, multi-select, and free-text custom answers.
+struct OCQuestion: Codable, Identifiable, Hashable {
+    let id: String
+    var sessionID: String
+    var questions: [OCQuestionInfo]
+}
+
+struct OCQuestionInfo: Codable, Hashable {
+    var question: String
+    var header: String
+    var options: [OCQuestionOption]
+    var multiple: Bool?
+    var custom: Bool?
+}
+
+struct OCQuestionOption: Codable, Hashable {
+    var label: String
+    var description: String
+}
+
+/// A file or attachment referenced in the conversation, surfaced in the Context
+/// tab's "Context files" list. `path` is the full file path (or URL for remote
+/// attachments); `name` is the display basename.
+struct ContextFile: Identifiable, Hashable {
+    let path: String
+    var mime: String?
+    var url: String?
+    var id: String { path }
+    var name: String { (path as NSString).lastPathComponent }
+
+    var isImage: Bool { mime?.lowercased().hasPrefix("image/") ?? false }
+
+    /// Decoded bytes when `url` is an embedded `data:` URI (used for inline
+    /// previews of attachments that aren't real files on disk).
+    var inlineData: Data? {
+        guard let url, url.hasPrefix("data:"),
+              let comma = url.firstIndex(of: ","),
+              url[..<comma].contains("base64") else { return nil }
+        let b64 = String(url[url.index(after: comma)...])
+        return Data(base64Encoded: b64)
+    }
+}
+
+// MARK: - VCS / files
+
+/// Git/VCS file change status as reported by `/file/status` and `/vcs/status`.
+enum OCFileStatus: String, Codable { case added, deleted, modified, unknown
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = OCFileStatus(rawValue: raw) ?? .unknown
+    }
+}
+
+struct OCFileChange: Codable, Identifiable, Hashable {
+    var id: String { path }
+    let path: String
+    var added: Int?
+    var removed: Int?
+    var status: OCFileStatus?
+}
+
+/// `GET /vcs` — current branch and the repository's default branch.
+struct OCVcsInfo: Codable, Hashable {
+    var branch: String?
+    var defaultBranch: String?
+
+    enum CodingKeys: String, CodingKey {
+        case branch
+        case defaultBranch = "default_branch"
+    }
+}
+
+/// A single changed file from `GET /vcs/diff` — carries the unified-diff
+/// `patch` plus line counts and status. Used by the Git panel's diff viewer.
+struct OCVcsFileDiff: Codable, Identifiable, Hashable {
+    var id: String { file }
+    let file: String
+    var patch: String?
+    var additions: Int
+    var deletions: Int
+    var status: OCFileStatus?
+}
+
+/// A directory entry from `GET /file?path=` — one level of the workspace tree.
+struct OCFileNode: Codable, Identifiable, Hashable {
+    let name: String
+    let path: String
+    let absolute: String
+    let type: String
+    let ignored: Bool
+
+    var id: String { path }
+    var isDirectory: Bool { type == "directory" }
+}
+
+/// A file's contents from `GET /file/content?path=` (read-only).
+struct OCFileContent: Codable, Hashable {
+    let type: String
+    let content: String?
+    let diff: String?
+
+    var isBinary: Bool { type == "binary" }
+}
+
+// MARK: - Terminal (PTY)
+
+/// A pseudo-terminal session from `GET/POST /pty`.
+struct OCPty: Codable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let command: String
+    let args: [String]
+    let cwd: String
+    let status: String
+    let pid: Int
+
+    var isRunning: Bool { status == "running" }
+}
+
+/// An available login shell from `GET /pty/shells`.
+struct OCShell: Codable, Identifiable, Hashable {
+    let path: String
+    let name: String
+    let acceptable: Bool
+
+    var id: String { path }
+}
+
+// MARK: - Provider authentication (GET /provider/auth, /provider, /auth/{id}, OAuth)
+
+/// One sign-in option a provider offers (an API-key entry or an OAuth flow),
+/// from `GET /provider/auth`.
+struct ProviderAuthMethod: Codable, Hashable {
+    let type: String          // "oauth" | "api"
+    let label: String
+    var prompts: [AuthPrompt]?
+
+    var isOAuth: Bool { type == "oauth" }
+    var isAPIKey: Bool { type == "api" }
+}
+
+/// A single question shown before starting an auth method (e.g. Copilot's
+/// "Select GitHub deployment type"). `when` gates conditional prompts.
+struct AuthPrompt: Codable, Hashable, Identifiable {
+    let type: String          // "text" | "select"
+    let key: String
+    let message: String?
+    var placeholder: String?
+    var options: [AuthPromptOption]?
+    var when: AuthPromptWhen?
+
+    var id: String { key }
+    var isSelect: Bool { type == "select" }
+}
+
+struct AuthPromptOption: Codable, Hashable, Identifiable {
+    let label: String
+    let value: String
+    var hint: String?
+    var id: String { value }
+}
+
+struct AuthPromptWhen: Codable, Hashable {
+    let key: String
+    let op: String            // "eq" | "neq"
+    let value: String
+
+    /// Whether this prompt should be shown given the current answers.
+    func isSatisfied(by answers: [String: String]) -> Bool {
+        let current = answers[key]
+        switch op {
+        case "eq":  return current == value
+        case "neq": return current != value
+        default:    return true
+        }
+    }
+}
+
+/// Result of starting an OAuth flow (`POST /provider/{id}/oauth/authorize`).
+/// `method == "auto"` → user enters `instructions` code at `url`, then we poll
+/// the callback; `method == "code"` → user pastes a code back into the callback.
+struct ProviderAuthAuthorization: Codable, Hashable {
+    let url: String
+    let method: String        // "auto" | "code"
+    let instructions: String
+
+    var isAuto: Bool { method == "auto" }
+}
+
+/// A provider entry from `GET /provider` (`all`) plus the `connected` list.
+/// Note: the canonical provider model is `OCProvider` / `OCProvidersResponse`
+/// defined above; this section only adds the *auth-method* types.
