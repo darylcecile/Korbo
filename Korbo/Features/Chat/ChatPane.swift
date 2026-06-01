@@ -7,6 +7,7 @@ struct ChatPane: View {
     @EnvironmentObject private var store: KorboStore
     @State private var attachments: [ComposerAttachment] = []
     @State private var photoItems: [PhotosPickerItem] = []
+    @State private var showPhotoPicker = false
     @State private var showFileImporter = false
     @State private var isPinnedToBottom = true
     @State private var isExpandedComposer = false
@@ -339,39 +340,39 @@ struct ChatPane: View {
                         if !focused { clearSuggestions() }
                     }
                 HStack(spacing: 14) {
-                    PhotosPicker(selection: $photoItems, maxSelectionCount: 4, matching: .images) {
-                        Image(systemName: "photo")
-                    }
-                    .disabled(!canSend)
-                    Button { showFileImporter = true } label: {
-                        Image(systemName: "paperclip")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canSend)
-                    // Snippets library
-                    Button { showSnippetsSheet = true } label: {
-                        Image(systemName: "bookmark")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canSend)
-                    // PencilKit sketch
-                    Button { showScribbleSheet = true } label: {
-                        Image(systemName: "pencil.tip.crop.circle")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canSend)
-                    // Voice dictation (mic)
-                    Button { toggleDictation() } label: {
-                        Image(systemName: speech.isDictating ? "mic.fill" : "mic")
+                    // Consolidated "add content" menu
+                    Menu {
+                        Button { showPhotoPicker = true } label: {
+                            Label("Photo", systemImage: "photo")
+                        }
+                        Button { showFileImporter = true } label: {
+                            Label("File", systemImage: "paperclip")
+                        }
+                        Button { showScribbleSheet = true } label: {
+                            Label("Draw", systemImage: "pencil.tip.crop.circle")
+                        }
+                        Button { showSnippetsSheet = true } label: {
+                            Label("Snippets", systemImage: "bookmark")
+                        }
+                        Button { toggleDictation() } label: {
+                            Label(speech.isDictating ? "Stop dictation" : "Dictate",
+                                  systemImage: speech.isDictating ? "mic.fill" : "mic")
+                        }
+                    } label: {
+                        Image(systemName: speech.isDictating ? "mic.fill" : "plus.circle")
                             .foregroundStyle(speech.isDictating ? Theme.removed : Theme.textSecondary)
                     }
+                    .menuStyle(.button)
                     .buttonStyle(.plain)
                     .disabled(!canSend)
+                    .accessibilityLabel("Add attachment")
+
                     Button { isExpandedComposer = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
+                    .accessibilityLabel("Expand composer")
                     Spacer()
                     modelMenu
                     agentMenu
@@ -432,6 +433,8 @@ struct ChatPane: View {
                 insertSnippet(snippet)
             }
         }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItems,
+                      maxSelectionCount: 4, matching: .images)
         .sheet(isPresented: $showScribbleSheet) {
             ScribbleSheet { image in
                 attachSketch(image)
