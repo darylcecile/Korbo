@@ -120,7 +120,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Fetch / pull / push / sync actions — *no API*
 - [ ] P1 History/log list (hash, author, time, message) — *no log API*
 - [ ] P2 Git graph visualization
-- [ ] P1 Pull request: create (title/desc/base)
+- [x] P1 Pull request: create (title/desc/base) — GitHub API; repo picker per session, base/head prefilled from /vcs
 - [ ] P1 Pull request: view status/reviews/CI
 - [ ] P2 Pull request: merge / request review / comment
 - [ ] P2 Branch integration (merge/rebase/squash/ff)

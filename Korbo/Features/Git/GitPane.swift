@@ -7,7 +7,10 @@ import SwiftUI
 /// opencode REST API and arrive in a later milestone via a server-side bridge.
 struct GitPane: View {
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var github: GitHubStore
     @State private var expanded: Set<String> = []
+    @State private var showCreatePR = false
+    @State private var showPRList = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,6 +18,8 @@ struct GitPane: View {
             Divider().overlay(Theme.border)
             content
         }
+        .sheet(isPresented: $showCreatePR) { PRCreateSheet() }
+        .sheet(isPresented: $showPRList) { PRListView() }
     }
 
     // MARK: Header
@@ -38,6 +43,24 @@ struct GitPane: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                Button {
+                    showPRList = true
+                } label: {
+                    Image(systemName: "list.bullet.rectangle")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("List pull requests")
+                Button {
+                    showCreatePR = true
+                } label: {
+                    Image(systemName: "plus.diamond")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Create pull request")
                 Button {
                     Task { await store.loadGit() }
                 } label: {
