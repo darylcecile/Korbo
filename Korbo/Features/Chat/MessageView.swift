@@ -6,6 +6,7 @@ struct MessageView: View {
     let item: OCMessageItem
     @EnvironmentObject private var store: KorboStore
     @ObservedObject private var speech = SpeechController.shared
+    @ObservedObject private var appearance = AppearanceStore.shared
     @State private var showCopyConfirm = false
     @State private var showDeleteConfirm = false
 
@@ -164,7 +165,14 @@ struct MessageView: View {
     private func partView(_ part: OCPart) -> some View {
         switch part.type {
         case .text where part.isVisibleText:
-            MarkdownView(text: part.text ?? "")
+            if appearance.renderMarkdown {
+                MarkdownView(text: part.text ?? "")
+            } else {
+                Text(part.text ?? "")
+                    .font(.system(size: 13.5, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         case .reasoning where !(part.text ?? "").isEmpty:
             ReasoningView(text: part.text ?? "")
         case .file:

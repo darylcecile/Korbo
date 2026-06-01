@@ -21,6 +21,7 @@ struct SettingsView: View {
             Form {
                 connectionSection
                 appearanceSection
+                chatSection
                 providersSection
                 agentsSection
                 commandsSection
@@ -159,6 +160,27 @@ struct SettingsView: View {
             Text("Appearance")
         } footer: {
             Text("Text size and density affect Dynamic Type–respecting text and standard controls.")
+        }
+    }
+
+    // MARK: Chat
+
+    private var chatSection: some View {
+        Section {
+            Toggle("Render markdown", isOn: $appearance.renderMarkdown)
+
+            LabeledContent("Default model") {
+                Text(store.effectiveModelLabel)
+                    .foregroundStyle(.secondary)
+            }
+            LabeledContent("Default agent") {
+                Text(store.resolveAgent()?.capitalized ?? "Auto")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Chat")
+        } footer: {
+            Text("Markdown off shows assistant replies as plain monospaced text. The default model and agent are chosen from the composer and remembered for new sessions.")
         }
     }
 

@@ -158,6 +158,7 @@ final class AppearanceStore: ObservableObject {
         static let textSize = "korbo.appearance.textSize"
         static let density  = "korbo.appearance.density"
         static let codeTheme = "korbo.appearance.codeTheme"
+        static let renderMarkdown = "korbo.appearance.renderMarkdown"
     }
 
     // MARK: - Published Settings
@@ -180,6 +181,10 @@ final class AppearanceStore: ObservableObject {
 
     @Published var codeTheme: CodeTheme {
         didSet { UserDefaults.standard.set(codeTheme.rawValue, forKey: Keys.codeTheme) }
+    }
+
+    @Published var renderMarkdown: Bool {
+        didSet { UserDefaults.standard.set(renderMarkdown, forKey: Keys.renderMarkdown) }
     }
 
     // MARK: - Computed Convenience
@@ -243,6 +248,13 @@ final class AppearanceStore: ObservableObject {
             self.codeTheme = value
         } else {
             self.codeTheme = .darkPlus
+        }
+
+        // Defaults to true (markdown on) when the key has never been written.
+        if defaults.object(forKey: Keys.renderMarkdown) != nil {
+            self.renderMarkdown = defaults.bool(forKey: Keys.renderMarkdown)
+        } else {
+            self.renderMarkdown = true
         }
     }
 }
