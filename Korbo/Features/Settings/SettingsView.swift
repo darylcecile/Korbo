@@ -8,8 +8,10 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var github: GitHubStore
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var appearance = AppearanceStore.shared
+    @Environment(\.openURL) private var openURL
 
     @State private var keyTarget: OCProvider?
     @State private var keyInput: String = ""
@@ -20,6 +22,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 connectionSection
+                githubSection
                 appearanceSection
                 chatSection
                 providersSection
@@ -62,7 +65,68 @@ struct SettingsView: View {
             } message: {
                 Text("Disconnects \(removeTarget?.name ?? removeTarget?.id ?? "this provider") until you add a key again.")
             }
+            .sheet(isPresented: deviceFlowSheetBinding) {
+                if let flow = github.deviceFlow {
+                    DeviceFlowSheet(flow: flow) {
+                        github.cancelDeviceFlow()
+                    }
+                    .presentationDetents([.medium])
+                }
+            }
         }
+    }
+
+    // MARK: GitHub
+
+    @ViewBuilder
+    private var githubSection: some View {
+        Section {
+            TextField("OAuth App Client ID", text: $github.clientID)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .font(.system(size: 13, design: .monospaced))
+
+            if github.isSignedIn {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("@" + (github.authedUser?.login ?? "…"))
+                            .foregroundStyle(Theme.textPrimary)
+                        if let name = github.authedUser?.name, !name.isEmpty {
+                            Text(name).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                }
+                Button(role: .destructive) {
+                    github.signOut()
+                } label: {
+                    Label("Sign out of GitHub", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            } else {
+                Button {
+                    Task { await github.startDeviceFlow() }
+                } label: {
+                    Label("Sign in with GitHub", systemImage: "arrow.right.circle")
+                }
+                .disabled(github.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                          || github.deviceFlow != nil)
+            }
+        } header: {
+            Text("GitHub")
+        } footer: {
+            Text("Create a GitHub OAuth App with **Device Flow enabled** and paste its Client ID here. The Client ID is a public identifier — not a secret. Korbo never asks for the client secret.")
+        }
+    }
+
+    private var deviceFlowSheetBinding: Binding<Bool> {
+        Binding(
+            get: { github.deviceFlow != nil },
+            set: { if !$0 { github.cancelDeviceFlow() } }
+        )
     }
 
     // MARK: Connection
@@ -372,6 +436,78 @@ struct SettingsView: View {
     }
     private var removeAlertBinding: Binding<Bool> {
         Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } })
+    }
+}
+
+/// Sheet shown while a GitHub Device Flow authorisation is in progress. The
+/// user copies the short `userCode`, opens `verification_uri` in Safari,
+/// pastes the code, and the polling loop in `GitHubStore` finishes sign-in.
+private struct DeviceFlowSheet: View {
+    let flow: DeviceFlowState
+    let onCancel: () -> Void
+    @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 18) {
+                Text("Authorize Korbo on GitHub")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Open GitHub, paste the code below, and approve access.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(flow.userCode)
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .tracking(4)
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 22)
+                    .background(Theme.panelRaised, in: RoundedRectangle(cornerRadius: 10))
+
+                HStack(spacing: 10) {
+                    Button {
+                        UIPasteboard.general.string = flow.userCode
+                    } label: {
+                        Label("Copy code", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        if let url = URL(string: flow.verificationURI) {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label("Open github.com/login/device", systemImage: "safari")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for authorization…")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.top, 4)
+
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(24)
+            .background(Theme.bg)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 

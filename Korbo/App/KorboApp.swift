@@ -4,13 +4,14 @@ import SwiftUI
 struct KorboApp: App {
     @StateObject private var appModel = AppModel()
     @StateObject private var store = KorboStore()
+    @StateObject private var github = GitHubStore()
     @ObservedObject private var intents = IntentRouter.shared
     @ObservedObject private var appearance = AppearanceStore.shared
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .modifier(RootEnvironment(appModel: appModel, store: store, appearance: appearance))
+                .modifier(RootEnvironment(appModel: appModel, store: store, github: github, appearance: appearance))
                 .task {
                     // Attempt to connect to the selected server on launch. If no
                     // credentials are stored yet this surfaces a failed state and
@@ -33,7 +34,7 @@ struct KorboApp: App {
         // connection and simply focuses the requested session.
         WindowGroup(for: String.self) { $sessionID in
             SessionWindowView(sessionID: sessionID)
-                .modifier(RootEnvironment(appModel: appModel, store: store, appearance: appearance))
+                .modifier(RootEnvironment(appModel: appModel, store: store, github: github, appearance: appearance))
                 .task(id: sessionID) {
                     if store.servers.selectedServer != nil, !store.status.isConnected {
                         await store.connect()
@@ -68,12 +69,14 @@ struct KorboApp: App {
 private struct RootEnvironment: ViewModifier {
     let appModel: AppModel
     let store: KorboStore
+    let github: GitHubStore
     let appearance: AppearanceStore
 
     func body(content: Content) -> some View {
         content
             .environmentObject(appModel)
             .environmentObject(store)
+            .environmentObject(github)
             .environmentObject(appearance)
             .preferredColorScheme(.dark)
             .tint(appearance.accentColor)
