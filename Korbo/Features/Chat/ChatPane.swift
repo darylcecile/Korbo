@@ -21,6 +21,14 @@ struct ChatPane: View {
         UIDevice.current.userInterfaceIdiom == .phone
     }
 
+    /// Corner radius for the composer's glass container. On iPhone the bar is
+    /// inset only ~16pt from the display edge, so a rounder corner sits roughly
+    /// concentric with the device's own (much rounder) screen corners; on iPad
+    /// the subtler 18pt corner is kept.
+    private var composerCornerRadius: CGFloat {
+        isPhone ? 34 : 18
+    }
+
     // Find-in-conversation (local to this view; no app-level state).
     @State private var isSearching = false
     @State private var searchQuery = ""
@@ -751,9 +759,9 @@ struct ChatPane: View {
             .padding(.horizontal, 16)
             .padding(.top, isPhone ? 14 : 12)
             .padding(.bottom, isPhone ? 12 : 10)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
                     .stroke(isDropTargeted ? Theme.accent : Theme.border.opacity(0.5),
                             lineWidth: isDropTargeted ? 1.5 : 0.5)
                     .allowsHitTesting(false)
