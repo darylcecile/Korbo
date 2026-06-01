@@ -153,7 +153,7 @@ struct ChatPane: View {
         }
         .foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panelRaised))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func models(of provider: OCProvider) -> [OCModel] {
