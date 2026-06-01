@@ -19,6 +19,7 @@ struct RootView: View {
                 }
             }
             .background(Theme.bg)
+            .ignoresSafeArea(.container, edges: .bottom)
             .foregroundStyle(Theme.textPrimary)
             .animation(.easeInOut(duration: 0.2), value: app.showRightSidebar)
             .animation(.easeInOut(duration: 0.2), value: app.sessionsDrawerOpen)
