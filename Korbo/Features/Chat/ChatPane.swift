@@ -11,6 +11,7 @@ struct ChatPane: View {
     @State private var showFileImporter = false
     @State private var isPinnedToBottom = true
     @State private var isExpandedComposer = false
+    @State private var isDropTargeted = false
     @FocusState private var composerFocused: Bool
 
     // Snippets library
@@ -351,6 +352,11 @@ struct ChatPane: View {
                         Button { showFileImporter = true } label: {
                             Label("File", systemImage: "paperclip")
                         }
+                        if canPasteFromClipboard {
+                            Button { pasteFromClipboard() } label: {
+                                Label("Paste", systemImage: "doc.on.clipboard")
+                            }
+                        }
                         Button { showScribbleSheet = true } label: {
                             Label("Draw", systemImage: "pencil.tip.crop.circle")
                         }
@@ -408,9 +414,13 @@ struct ChatPane: View {
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Theme.border.opacity(0.5), lineWidth: 0.5)
+                    .stroke(isDropTargeted ? Theme.accent : Theme.border.opacity(0.5),
+                            lineWidth: isDropTargeted ? 1.5 : 0.5)
                     .allowsHitTesting(false)
             )
+            .onDrop(of: [.image, .fileURL, .item], isTargeted: $isDropTargeted) { providers in
+                handleDrop(providers)
+            }
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .padding(.top, 8)
@@ -646,19 +656,38 @@ struct ChatPane: View {
     private func loadPhotos(_ items: [PhotosPickerItem]) async {
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-            // Re-encode to a known mime so the server always gets a valid image.
-            let (bytes, mime, ext): (Data, String, String)
-            if let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) {
-                (bytes, mime, ext) = (jpeg, "image/jpeg", "jpg")
-            } else {
-                (bytes, mime, ext) = (data, "image/png", "png")
-            }
-            let name = "image-\(attachments.count + 1).\(ext)"
-            attachments.append(ComposerAttachment(
-                filename: name, mime: mime,
-                dataURL: "data:\(mime);base64,\(bytes.base64EncodedString())"))
+            attachImageData(data)
         }
         photoItems = []
+    }
+
+    /// Re-encode arbitrary image bytes to a known mime so the server always gets a
+    /// valid image, then append as an attachment.
+    @MainActor
+    private func attachImageData(_ data: Data) {
+        let (bytes, mime, ext): (Data, String, String)
+        if let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) {
+            (bytes, mime, ext) = (jpeg, "image/jpeg", "jpg")
+        } else {
+            (bytes, mime, ext) = (data, "image/png", "png")
+        }
+        let name = "image-\(attachments.count + 1).\(ext)"
+        attachments.append(ComposerAttachment(
+            filename: name, mime: mime,
+            dataURL: "data:\(mime);base64,\(bytes.base64EncodedString())"))
+    }
+
+    @MainActor
+    private func attachImage(_ image: UIImage) {
+        guard let jpeg = image.jpegData(compressionQuality: 0.85) else { return }
+        attachImageData(jpeg)
+    }
+
+    @MainActor
+    private func attachFileData(_ data: Data, filename: String, mime: String) {
+        attachments.append(ComposerAttachment(
+            filename: filename, mime: mime,
+            dataURL: "data:\(mime);base64,\(data.base64EncodedString())"))
     }
 
     private func loadFiles(_ urls: [URL]) {
@@ -668,10 +697,58 @@ struct ChatPane: View {
             guard let data = try? Data(contentsOf: url) else { continue }
             let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
                 ?? "application/octet-stream"
-            attachments.append(ComposerAttachment(
-                filename: url.lastPathComponent, mime: mime,
-                dataURL: "data:\(mime);base64,\(data.base64EncodedString())"))
+            attachFileData(data, filename: url.lastPathComponent, mime: mime)
         }
+    }
+
+    // MARK: Paste & drag-and-drop
+
+    private var canPasteFromClipboard: Bool {
+        let pb = UIPasteboard.general
+        return pb.hasImages || pb.hasStrings || pb.hasURLs
+    }
+
+    /// Pull image(s) or text out of the system pasteboard. Images become
+    /// attachments; text is appended to the draft.
+    private func pasteFromClipboard() {
+        let pb = UIPasteboard.general
+        if pb.hasImages {
+            for case let image as UIImage in pb.images ?? [] {
+                attachImage(image)
+            }
+        } else if pb.hasStrings, let text = pb.string {
+            if app.composerDraft.trimmingCharacters(in: .whitespaces).isEmpty {
+                app.composerDraft = text
+            } else {
+                app.composerDraft += text
+            }
+            composerFocused = true
+        }
+    }
+
+    /// Accept images and files dragged onto the composer from Photos, Files, or
+    /// other apps. Returns true when at least one provider is consumable.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        var handled = false
+        for provider in providers {
+            if provider.canLoadObject(ofClass: UIImage.self) {
+                handled = true
+                provider.loadObject(ofClass: UIImage.self) { object, _ in
+                    guard let image = object as? UIImage else { return }
+                    Task { @MainActor in attachImage(image) }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                handled = true
+                provider.loadFileRepresentation(forTypeIdentifier: UTType.item.identifier) { url, _ in
+                    guard let url, let data = try? Data(contentsOf: url) else { return }
+                    let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                        ?? "application/octet-stream"
+                    let name = url.lastPathComponent
+                    Task { @MainActor in attachFileData(data, filename: name, mime: mime) }
+                }
+            }
+        }
+        return handled
     }
 
     // MARK: Snippets

@@ -86,7 +86,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 `!` shell prefix routing — verified on device
 - [x] P0 Attach file (document picker)
 - [x] P0 Attach image (photo picker) + preview
-- [ ] P1 Paste image; drag‑drop files
+- [x] P1 Paste image; drag‑drop files — paste verified on device (text + image via UIPasteboard); drag‑drop code-complete (reuses verified attach helpers; cross-app drop unverifiable in headless sim)
 - [x] P1 Attachment chips (remove, size/path)
 - [x] P0 Model selector — interactive model picker in the composer footer (moved out of header); verified on device (round-trips selection)
 - [ ] P1 Reasoning‑effort selector
