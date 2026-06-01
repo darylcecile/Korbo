@@ -4,6 +4,7 @@ import SwiftUI
 struct KorboApp: App {
     @StateObject private var appModel = AppModel()
     @StateObject private var store = KorboStore()
+    @ObservedObject private var intents = IntentRouter.shared
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,30 @@ struct KorboApp: App {
                         await store.connect()
                     }
                 }
+                .onChange(of: intents.pending) { _, pending in
+                    guard let pending else { return }
+                    Task { await handleIntent(pending) }
+                }
+        }
+    }
+
+    @MainActor
+    private func handleIntent(_ intent: IntentRouter.PendingIntent) async {
+        defer { intents.pending = nil }
+
+        // Ensure we're connected before acting
+        if !store.status.isConnected {
+            await store.connect()
+        }
+
+        switch intent {
+        case .newSession:
+            await store.createSession()
+        case .sendPrompt(let text):
+            if store.selectedSessionID == nil {
+                await store.createSession()
+            }
+            await store.sendPrompt(text)
         }
     }
 }

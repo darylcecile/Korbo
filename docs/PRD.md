@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Status | Draft v0.1 |
-| Platform | iPadOS 17+ (iPad‑only, landscape‑first; portrait supported) |
+| Platform | iPadOS 26+ (iPad‑only, landscape‑first; portrait supported) |
 | Tech | SwiftUI, Swift Concurrency, URLSession (REST + SSE + WebSocket) |
 | Backend | A remote/LAN [opencode](https://github.com/anomalyco/opencode) server (`opencode serve`) |
 | Design north star | [openchamber](https://github.com/openchamber/openchamber) — its desktop/web opencode GUI |

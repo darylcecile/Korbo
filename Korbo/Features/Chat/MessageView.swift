@@ -3,6 +3,7 @@ import SwiftUI
 /// Renders a single message (user or assistant) and its ordered parts.
 struct MessageView: View {
     let item: OCMessageItem
+    @ObservedObject private var speech = SpeechController.shared
 
     var body: some View {
         if item.info.role == .user {
@@ -80,22 +81,45 @@ struct MessageView: View {
 
     @ViewBuilder
     private var footer: some View {
-        if let duration = item.info.duration {
-            HStack(spacing: 16) {
+        HStack(spacing: 16) {
+            if let duration = item.info.duration {
                 Label(String(format: "%.1fs", duration), systemImage: "timer")
                 if let completed = item.info.completedAt {
                     Text(completed, style: .time)
                 }
             }
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.textTertiary)
+            // TTS read-aloud button: only show if there's visible text
+            if !visibleTextContent.isEmpty {
+                Spacer()
+                Button {
+                    speech.toggleSpeak(messageID: item.info.id, text: visibleTextContent)
+                } label: {
+                    Image(systemName: speech.speakingMessageID == item.info.id
+                          ? "speaker.wave.2.fill"
+                          : "speaker.wave.2")
+                        .foregroundStyle(speech.speakingMessageID == item.info.id
+                                         ? Theme.accent
+                                         : Theme.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .font(.system(size: 11))
+        .foregroundStyle(Theme.textTertiary)
     }
 
     // MARK: Helpers
 
     private var textParts: [OCPart] { item.parts.filter { $0.type == .text && !($0.text ?? "").isEmpty } }
     private var fileParts: [OCPart] { item.parts.filter { $0.type == .file } }
+
+    /// Joined visible text parts for TTS
+    private var visibleTextContent: String {
+        item.parts
+            .filter { $0.type == .text && $0.isVisibleText }
+            .compactMap { $0.text }
+            .joined(separator: "\n")
+    }
 
     private func badge(_ text: String, _ color: Color) -> some View {
         Text(text)

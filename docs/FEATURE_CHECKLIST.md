@@ -94,7 +94,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Draft persistence per session
 - [x] P2 Draft preset chips / starters — starter pill chips (Explain codebase, Find & fix a bug, Write unit tests, Review recent changes, Refactor, Add docs) shown when draft empty + no messages; tap prefills + focuses composer, auto‑hides on input; verified on device
 - [x] P2 Expand/focus‑mode input — "Enter Full Screen" button opens a `.sheet` "Compose" editor (`TextEditor` bound to same draft, Done collapses keeping text, Send routes through `send()`); draft syncs bidirectionally; verified on device
-- [ ] P2 Pencil scribble input
+- [x] P2 Pencil scribble input — "Markup" composer button opens a `PKCanvasView` sketch sheet (pen/eraser/clear, `.anyInput` so finger works in sim); Attach renders the drawing to a PNG and adds it as a removable image `ComposerAttachment` chip; iPadOS Scribble-to-text works natively in the text field; verified on device (drew stroke → Attach enabled → "sketch-1.jpg" chip with thumbnail)
 
 ## 5. Git tab (right)
 > opencode's server exposes a **read + diff** VCS surface only (`/vcs`,
@@ -167,7 +167,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Git identities editor
 - [ ] P2 Behavior: auto‑commit/PR/branch/stash, permission auto‑rules
 - [ ] P2 Usage & quota (per‑provider, pace, limits)
-- [ ] P2 Voice (TTS/STT)
+- [x] P2 Voice (TTS/STT) — `SpeechController` singleton: read-aloud speaker button in each assistant message footer (`AVSpeechSynthesizer`, toggles per-message, delegate resets state on finish/cancel) + composer mic button for live dictation (`SFSpeechRecognizer` + `AVAudioEngine`, partial transcripts stream into the draft); mic + speech Info.plist usage keys added. Verified on device: TTS button present/wired; mic triggers the Microphone permission prompt + flow. Live transcription requires real-device mic (simulator has no microphone)
 - [ ] P2 i18n / language selection
 - [ ] P2 Tunnel / remote relay configuration
 
@@ -195,7 +195,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Hardware keyboard shortcuts — global ⌘-shortcuts via `GlobalShortcuts` (palette, panel toggles, tab switches, new session, focus composer, settings, send)
 - [x] P1 Split View / Stage Manager friendliness — width-driven adaptive 3/2/1-pane shell with auto-collapsing side panels + overlay drawers
 - [ ] P1 Share sheet (share session/diff/output)
-- [ ] P2 App Intents / Shortcuts
+- [x] P2 App Intents / Shortcuts — `NewSessionIntent` + `SendPromptIntent` (String prompt param) with `KorboShortcuts: AppShortcutsProvider` phrases; `IntentRouter` singleton holds a pending action (`openAppWhenRun`), `KorboApp` observes via `.onChange` and dispatches to the store (connect → create session if needed → create/send). Build-level verified (`Metadata.appintents` generated); Siri/Shortcuts invocation not drivable in the simulator
 - [ ] P2 Handoff / Continuity
 - [ ] P0 Accessibility: Dynamic Type, VoiceOver, contrast, 44pt targets
 
@@ -204,7 +204,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P2 Fusion / results comparison
 - [ ] P2 Scheduled tasks
 - [ ] P2 Session sharing links (view‑only / expiry)
-- [ ] P2 Snippets / magic prompts library
+- [x] P2 Snippets / magic prompts library — `SnippetStore` singleton (UserDefaults-persisted, seeds 4 defaults) + "Bookmark" composer button opening a sheet (app-native `ScrollView`+`LazyVStack` rows, per-row ⋯ menu for Edit/Move Up/Move Down/Delete + long-press context menu, add/edit form); tapping a snippet inserts its text into the composer draft and dismisses. Verified on device (tapped "Explain selection" → draft populated + Send enabled)
 
 ---
 

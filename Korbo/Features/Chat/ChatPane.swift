@@ -12,6 +12,16 @@ struct ChatPane: View {
     @State private var isExpandedComposer = false
     @FocusState private var composerFocused: Bool
 
+    // Snippets library
+    @StateObject private var snippetStore = SnippetStore.shared
+    @State private var showSnippetsSheet = false
+
+    // PencilKit sketch
+    @State private var showScribbleSheet = false
+
+    // Voice dictation
+    @ObservedObject private var speech = SpeechController.shared
+
     // Starter chips shown when composer is empty and no messages exist.
     private let starters = [
         "Explain this codebase",
@@ -338,6 +348,25 @@ struct ChatPane: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
+                    // Snippets library
+                    Button { showSnippetsSheet = true } label: {
+                        Image(systemName: "bookmark")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    // PencilKit sketch
+                    Button { showScribbleSheet = true } label: {
+                        Image(systemName: "pencil.tip.crop.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    // Voice dictation (mic)
+                    Button { toggleDictation() } label: {
+                        Image(systemName: speech.isDictating ? "mic.fill" : "mic")
+                            .foregroundStyle(speech.isDictating ? Theme.removed : Theme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
                     Button { isExpandedComposer = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                     }
@@ -376,6 +405,12 @@ struct ChatPane: View {
         .onChange(of: app.focusComposerToken) { _, _ in
             if canSend { composerFocused = true }
         }
+        .onChange(of: speech.partialTranscript) { _, transcript in
+            // Live update composer draft with dictation transcript
+            if speech.isDictating {
+                app.composerDraft = transcript
+            }
+        }
         .fileImporter(isPresented: $showFileImporter,
                       allowedContentTypes: [.item],
                       allowsMultipleSelection: true) { result in
@@ -391,6 +426,16 @@ struct ChatPane: View {
                 },
                 onDismiss: { isExpandedComposer = false }
             )
+        }
+        .sheet(isPresented: $showSnippetsSheet) {
+            SnippetsSheet(store: snippetStore) { snippet in
+                insertSnippet(snippet)
+            }
+        }
+        .sheet(isPresented: $showScribbleSheet) {
+            ScribbleSheet { image in
+                attachSketch(image)
+            }
         }
     }
 
@@ -607,6 +652,39 @@ struct ChatPane: View {
             attachments.append(ComposerAttachment(
                 filename: url.lastPathComponent, mime: mime,
                 dataURL: "data:\(mime);base64,\(data.base64EncodedString())"))
+        }
+    }
+
+    // MARK: Snippets
+
+    private func insertSnippet(_ snippet: Snippet) {
+        if app.composerDraft.trimmingCharacters(in: .whitespaces).isEmpty {
+            app.composerDraft = snippet.text
+        } else {
+            app.composerDraft += "\n\n" + snippet.text
+        }
+        composerFocused = true
+    }
+
+    // MARK: Sketch attachment
+
+    @State private var sketchIndex = 0
+
+    private func attachSketch(_ image: UIImage) {
+        guard let jpeg = image.jpegData(compressionQuality: 0.85) else { return }
+        sketchIndex += 1
+        let filename = "sketch-\(sketchIndex).jpg"
+        let dataURL = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
+        attachments.append(ComposerAttachment(filename: filename, mime: "image/jpeg", dataURL: dataURL))
+    }
+
+    // MARK: Dictation
+
+    private func toggleDictation() {
+        if speech.isDictating {
+            speech.stopDictation()
+        } else {
+            speech.startDictation()
         }
     }
 }
