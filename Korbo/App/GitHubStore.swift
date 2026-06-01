@@ -175,6 +175,32 @@ final class GitHubStore: ObservableObject {
         )
     }
 
+    /// Collaborators who can be requested as reviewers on `owner/repo`.
+    func loadCollaborators(owner: String, repo: String) async throws -> [GHActor] {
+        guard let token else { throw GitHubStoreError.notSignedIn }
+        return try await client.listCollaborators(token: token, owner: owner, repo: repo)
+    }
+
+    /// Request reviews from the given GitHub logins.
+    func requestReviewers(owner: String, repo: String, number: Int, reviewers: [String]) async throws {
+        guard let token else { throw GitHubStoreError.notSignedIn }
+        try await client.requestReviewers(
+            token: token, owner: owner, repo: repo, number: number, reviewers: reviewers
+        )
+    }
+
+    /// Merge a PR with the given method ("merge" | "squash" | "rebase").
+    func mergePR(
+        owner: String, repo: String, number: Int,
+        method: String, commitTitle: String?, commitMessage: String?
+    ) async throws -> GHMergeResult {
+        guard let token else { throw GitHubStoreError.notSignedIn }
+        return try await client.mergePullRequest(
+            token: token, owner: owner, repo: repo, number: number,
+            method: method, commitTitle: commitTitle, commitMessage: commitMessage
+        )
+    }
+
     func setRepo(_ ownerRepo: String?, forDirectory directory: String?) {
         guard let directory, !directory.isEmpty else { return }
         if let ownerRepo, !ownerRepo.isEmpty {

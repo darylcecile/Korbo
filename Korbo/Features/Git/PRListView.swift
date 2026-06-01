@@ -357,6 +357,11 @@ private struct PRDetailView: View {
     @State private var loadingChecks = false
     @State private var checksError: String?
 
+    @State private var showMergeSheet = false
+    @State private var showReviewersSheet = false
+    @State private var mergeResult: GHMergeResult?
+    @State private var reviewersRequested = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -384,6 +389,8 @@ private struct PRDetailView: View {
                 }
                 .buttonStyle(.plain)
                 Divider().overlay(Theme.border)
+                actionsSection
+                Divider().overlay(Theme.border)
                 reviewsSection
                 Divider().overlay(Theme.border)
                 checksSection
@@ -394,12 +401,97 @@ private struct PRDetailView: View {
         .background(Theme.bg)
         .navigationTitle("#\(pr.number)")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showReviewersSheet) {
+            PRReviewersSheet(
+                owner: owner, repo: repo, number: pr.number,
+                excludeLogins: excludedReviewerLogins
+            ) {
+                reviewersRequested = true
+            }
+            .environmentObject(github)
+        }
+        .sheet(isPresented: $showMergeSheet) {
+            PRMergeSheet(pr: pr, owner: owner, repo: repo) { result in
+                mergeResult = result
+                Task { await loadChecks() }
+            }
+            .environmentObject(github)
+        }
         .task {
             await loadReviews()
         }
         .task {
             await loadChecks()
         }
+    }
+
+    private var isOpen: Bool { pr.state.lowercased() == "open" && mergeResult == nil }
+
+    private var excludedReviewerLogins: Set<String> {
+        var set = Set<String>()
+        if let author = pr.user?.login { set.insert(author.lowercased()) }
+        if let me = github.authedUser?.login { set.insert(me.lowercased()) }
+        return set
+    }
+
+    private var actionsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Actions")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+
+            if let mergeResult, mergeResult.merged {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.added)
+                    Text("Merged" + (mergeResult.sha.map { " · \($0.prefix(7))" } ?? ""))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer()
+                }
+            }
+            if reviewersRequested {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
+                    Text("Review requested")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button { showReviewersSheet = true } label: {
+                    actionLabel("person.badge.plus", "Request reviewers", filled: false)
+                }
+                .buttonStyle(.plain)
+
+                if isOpen {
+                    Button { showMergeSheet = true } label: {
+                        actionLabel("arrow.triangle.merge", "Merge", filled: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func actionLabel(_ icon: String, _ title: String, filled: Bool) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+            Text(title).font(.system(size: 13, weight: .semibold))
+        }
+        .foregroundStyle(filled ? Color.white : Theme.accent)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(
+            (filled ? Theme.accent : Theme.panel),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(filled ? Color.clear : Theme.border, lineWidth: 1)
+        )
     }
 
     private var headerSection: some View {

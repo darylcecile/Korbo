@@ -177,6 +177,13 @@ private struct GHCheckRunsResponse: Codable {
     enum CodingKeys: String, CodingKey { case checkRuns = "check_runs" }
 }
 
+/// Result of `PUT /pulls/{n}/merge`.
+struct GHMergeResult: Codable, Hashable {
+    let sha: String?
+    let merged: Bool
+    let message: String
+}
+
 private struct GHTokenResponse: Codable {
     let accessToken: String?
     let tokenType: String?
@@ -408,6 +415,46 @@ actor GitHubClient {
         )
     }
 
+    /// `GET /repos/{owner}/{repo}/collaborators` — users who can be requested
+    /// as reviewers (decoded as `GHActor`; extra fields ignored).
+    func listCollaborators(
+        token: String, owner: String, repo: String
+    ) async throws -> [GHActor] {
+        try await getJSON(
+            "/repos/\(Self.pathEncode(owner))/\(Self.pathEncode(repo))/collaborators?per_page=100",
+            token: token
+        )
+    }
+
+    /// `POST /repos/{owner}/{repo}/pulls/{n}/requested_reviewers`
+    func requestReviewers(
+        token: String, owner: String, repo: String, number: Int, reviewers: [String]
+    ) async throws {
+        let dict: [String: Any] = ["reviewers": reviewers]
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        let _: GHPullRequest = try await postJSON(
+            "/repos/\(Self.pathEncode(owner))/\(Self.pathEncode(repo))/pulls/\(number)/requested_reviewers",
+            body: data, token: token
+        )
+    }
+
+    /// `PUT /repos/{owner}/{repo}/pulls/{n}/merge` — `method` is
+    /// "merge" | "squash" | "rebase".
+    func mergePullRequest(
+        token: String, owner: String, repo: String, number: Int,
+        method: String, commitTitle: String?, commitMessage: String?
+    ) async throws -> GHMergeResult {
+        var dict: [String: Any] = ["merge_method": method]
+        if let commitTitle, !commitTitle.isEmpty { dict["commit_title"] = commitTitle }
+        if let commitMessage, !commitMessage.isEmpty { dict["commit_message"] = commitMessage }
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        return try await sendJSON(
+            .put,
+            "/repos/\(Self.pathEncode(owner))/\(Self.pathEncode(repo))/pulls/\(number)/merge",
+            body: data, token: token
+        )
+    }
+
     // MARK: - Transport
 
     enum Method: String { case get = "GET", post = "POST", patch = "PATCH", delete = "DELETE", put = "PUT" }
@@ -422,7 +469,11 @@ actor GitHubClient {
     }
 
     private func postJSON<T: Decodable>(_ path: String, body: Data, token: String) async throws -> T {
-        let (data, _) = try await raw(.post, url: restHost + path, body: body,
+        try await sendJSON(.post, path, body: body, token: token)
+    }
+
+    private func sendJSON<T: Decodable>(_ method: Method, _ path: String, body: Data, token: String) async throws -> T {
+        let (data, _) = try await raw(method, url: restHost + path, body: body,
                                       contentType: "application/json",
                                       accept: "application/vnd.github+json",
                                       bearer: token)

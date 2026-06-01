@@ -123,7 +123,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Pull request: create (title/desc/base) — GitHub API; repo picker per session, base/head prefilled from /vcs
 - [x] P1 Pull request: view status/reviews/CI — list PRs (state/author/branches) + detail with reviews and check-runs
 - [x] P1 Pull request: full-screen diff reviewer — per-file unified diffs (live /pulls/{n}/files), tap-a-line inline comments, existing comments inline, submit review (Comment/Approve/Request changes)
-- [ ] P2 Pull request: merge / request review
+- [x] P2 Pull request: merge / request review — merge (commit/squash/rebase) verified live on a throwaway PR (`merged:true`); request-reviewers sheet with collaborator multi-select (excludes self/author)
 - [x] P2 Pull request: comment — inline review comments + review-level summary (verified live)
 - [ ] P2 Branch integration (merge/rebase/squash/ff)
 - [ ] P2 Conflict resolution dialog
