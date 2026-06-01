@@ -4,6 +4,7 @@ import UIKit
 struct SessionsSidebar: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    @Environment(\.openWindow) private var openWindow
 
     @State private var showSearch = false
     @State private var collapsed: Set<String> = []
@@ -376,6 +377,10 @@ struct SessionsSidebar: View {
                 selectedIDs = [session.id]
             }
         } label: { Label("Select", systemImage: "checkmark.circle") }
+
+        Button {
+            openWindow(value: session.id)
+        } label: { Label("Open in New Window", systemImage: "macwindow.badge.plus") }
 
         Divider()
 

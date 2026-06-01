@@ -22,7 +22,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Bottom terminal dock (toggle, resize) — repositioned: terminal toggles into the **centre column** (sessions‑toolbar terminal button / ⌘T) so it gets full chat‑pane width; right sidebar can be collapsed from the terminal header to widen it edge‑to‑edge
 - [x] P1 Command palette (⌘P): sessions, files, commands, settings, actions — `CommandPalette.swift`, fuzzy file search (`/find/file`), grouped Actions/Sessions/Files, ↑↓ nav + ↵ run + Esc, blurred overlay
 - [x] P1 Hardware‑keyboard shortcuts (mirror openchamber set where sensible) — `GlobalShortcuts` in RootView: ⌘P palette, ⌘\ toggle right panel, ⌘1–3 git/files/context, ⌘T toggle terminal, ⌘N new session, ⌘⇧L focus composer, ⌘, settings, ⌘↵ send
-- [ ] P2 Mini chat window / multi‑window (Stage Manager)
+- [~] P2 Multi‑window (Stage Manager) — "Open in New Window" session context‑menu action calls `openWindow(value: sessionID)` into a second `WindowGroup(for: String.self)` scene (`SessionWindowView` reusing `ChatPane`); `UIApplicationSupportsMultipleScenes` enabled. The action is wired and activates the requested session (verified on device — selecting it focuses that session's chat); a genuinely separate scene can only render on a physical iPad with Stage Manager / Split View, since the iOS Simulator does not support multiple windows. **v1 limitation (documented in code):** one shared store/selection means the second window mirrors the main window's selected session rather than hosting a fully independent one
 - [x] P0 Dark theme baseline; light/system later — app ships a single tuned dark theme (`Theme`); light/system variants deferred
 
 ## 2. Sessions sidebar (left)
