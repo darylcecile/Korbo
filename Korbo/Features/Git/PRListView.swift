@@ -361,6 +361,28 @@ private struct PRDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 headerSection
+                NavigationLink {
+                    PRDiffView(pr: pr, owner: owner, repo: repo)
+                        .environmentObject(github)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Review changes")
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
                 Divider().overlay(Theme.border)
                 reviewsSection
                 Divider().overlay(Theme.border)

@@ -129,6 +129,52 @@ final class GitHubStore: ObservableObject {
         return try await client.checkRuns(token: token, owner: owner, repo: repo, ref: ref)
     }
 
+    /// Changed files (with per-file unified diffs) for a PR. Paginated server-side.
+    func loadFiles(owner: String, repo: String, number: Int) async throws -> [GHPRFile] {
+        guard let token else { throw GitHubStoreError.notSignedIn }
+        var page = 1
+        var collected: [GHPRFile] = []
+        while true {
+            let batch = try await client.listFiles(
+                token: token, owner: owner, repo: repo, number: number, page: page
+            )
+            if batch.isEmpty { break }
+            collected.append(contentsOf: batch)
+            if batch.count < 100 { break }
+            page += 1
+            if page > 30 { break } // safety: at most 3000 files
+        }
+        return collected
+    }
+
+    /// Existing inline review comments for a PR.
+    func loadReviewComments(owner: String, repo: String, number: Int) async throws -> [GHReviewComment] {
+        guard let token else { throw GitHubStoreError.notSignedIn }
+        return try await client.listReviewComments(token: token, owner: owner, repo: repo, number: number)
+    }
+
+    /// Add an inline review comment on a diff line.
+    func addReviewComment(
+        owner: String, repo: String, number: Int,
+        body: String, commitID: String, path: String, line: Int, side: String
+    ) async throws -> GHReviewComment {
+        guard let token else { throw GitHubStoreError.notSignedIn }
+        return try await client.createReviewComment(
+            token: token, owner: owner, repo: repo, number: number,
+            body: body, commitID: commitID, path: path, line: line, side: side
+        )
+    }
+
+    /// Submit a review verdict (event = "COMMENT" | "APPROVE" | "REQUEST_CHANGES").
+    func submitReview(
+        owner: String, repo: String, number: Int, body: String?, event: String
+    ) async throws -> GHReview {
+        guard let token else { throw GitHubStoreError.notSignedIn }
+        return try await client.submitReview(
+            token: token, owner: owner, repo: repo, number: number, body: body, event: event
+        )
+    }
+
     func setRepo(_ ownerRepo: String?, forDirectory directory: String?) {
         guard let directory, !directory.isEmpty else { return }
         if let ownerRepo, !ownerRepo.isEmpty {

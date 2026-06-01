@@ -127,6 +127,51 @@ struct GHCheckRun: Codable, Hashable, Identifiable {
     let conclusion: String?
 }
 
+/// A single file changed by a pull request (`GET /pulls/{n}/files`). `patch`
+/// is the unified diff for that file (absent for binary/too-large files).
+struct GHPRFile: Codable, Hashable, Identifiable {
+    let filename: String
+    let status: String
+    let additions: Int
+    let deletions: Int
+    let changes: Int
+    let patch: String?
+    let sha: String?
+    let blobURL: String?
+
+    var id: String { sha.map { "\(filename)@\($0)" } ?? filename }
+
+    enum CodingKeys: String, CodingKey {
+        case filename, status, additions, deletions, changes, patch, sha
+        case blobURL = "blob_url"
+    }
+}
+
+/// An inline pull-request review comment anchored to a diff line
+/// (`GET/POST /pulls/{n}/comments`).
+struct GHReviewComment: Codable, Hashable, Identifiable {
+    let id: Int
+    let path: String?
+    let line: Int?
+    let originalLine: Int?
+    let side: String?
+    let body: String
+    let user: GHActor?
+    let diffHunk: String?
+    let htmlURL: String?
+    let createdAt: Date?
+    let inReplyToID: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, path, line, side, body, user
+        case originalLine = "original_line"
+        case diffHunk = "diff_hunk"
+        case htmlURL = "html_url"
+        case createdAt = "created_at"
+        case inReplyToID = "in_reply_to_id"
+    }
+}
+
 private struct GHCheckRunsResponse: Codable {
     let checkRuns: [GHCheckRun]
     enum CodingKeys: String, CodingKey { case checkRuns = "check_runs" }
@@ -308,6 +353,59 @@ actor GitHubClient {
             token: token
         )
         return wrapped.checkRuns
+    }
+
+    /// `GET /repos/{owner}/{repo}/pulls/{n}/files` — paginated; caller loops.
+    func listFiles(
+        token: String, owner: String, repo: String, number: Int, page: Int
+    ) async throws -> [GHPRFile] {
+        try await getJSON(
+            "/repos/\(Self.pathEncode(owner))/\(Self.pathEncode(repo))/pulls/\(number)/files?per_page=100&page=\(page)",
+            token: token
+        )
+    }
+
+    /// `GET /repos/{owner}/{repo}/pulls/{n}/comments` — inline review comments.
+    func listReviewComments(
+        token: String, owner: String, repo: String, number: Int
+    ) async throws -> [GHReviewComment] {
+        try await getJSON(
+            "/repos/\(Self.pathEncode(owner))/\(Self.pathEncode(repo))/pulls/\(number)/comments?per_page=100",
+            token: token
+        )
+    }
+
+    /// `POST /repos/{owner}/{repo}/pulls/{n}/comments` — add an inline comment
+    /// anchored to `path`/`line` on the given `side` ("RIGHT" | "LEFT") of the
+    /// diff for commit `commitID` (the PR head SHA).
+    func createReviewComment(
+        token: String, owner: String, repo: String, number: Int,
+        body: String, commitID: String, path: String, line: Int, side: String
+    ) async throws -> GHReviewComment {
+        let dict: [String: Any] = [
+            "body": body, "commit_id": commitID,
+            "path": path, "line": line, "side": side
+        ]
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        return try await postJSON(
+            "/repos/\(Self.pathEncode(owner))/\(Self.pathEncode(repo))/pulls/\(number)/comments",
+            body: data, token: token
+        )
+    }
+
+    /// `POST /repos/{owner}/{repo}/pulls/{n}/reviews` — submit a review with a
+    /// verdict. `event` is "COMMENT" | "APPROVE" | "REQUEST_CHANGES".
+    func submitReview(
+        token: String, owner: String, repo: String, number: Int,
+        body: String?, event: String
+    ) async throws -> GHReview {
+        var dict: [String: Any] = ["event": event]
+        if let body, !body.isEmpty { dict["body"] = body }
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        return try await postJSON(
+            "/repos/\(Self.pathEncode(owner))/\(Self.pathEncode(repo))/pulls/\(number)/reviews",
+            body: data, token: token
+        )
     }
 
     // MARK: - Transport
