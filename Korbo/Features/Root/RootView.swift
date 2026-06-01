@@ -42,6 +42,10 @@ struct RootView: View {
                     .environmentObject(app)
                     .environmentObject(store)
             }
+            .sheet(isPresented: $app.showShortcutsCheatSheet) {
+                ShortcutsCheatSheet()
+                    .environmentObject(app)
+            }
         }
         .id("\(appearance.accent.rawValue)-\(appearance.theme.rawValue)")
     }
@@ -221,9 +225,69 @@ private struct ConnectionBanner: View {
     }
 }
 
+/// A single hardware-keyboard shortcut, used purely for *display* in
+/// `ShortcutsCheatSheet`. The live bindings are registered explicitly in
+/// `GlobalShortcuts` (see the note there for why this isn't a `ForEach`);
+/// keep this catalogue in sync with those buttons.
+struct KorboShortcut: Identifiable {
+    let id = UUID()
+    let key: KeyEquivalent
+    let modifiers: EventModifiers
+    let title: String
+    let group: String
+
+    var display: String {
+        var s = ""
+        if modifiers.contains(.control) { s += "⌃" }
+        if modifiers.contains(.option)  { s += "⌥" }
+        if modifiers.contains(.shift)   { s += "⇧" }
+        if modifiers.contains(.command) { s += "⌘" }
+        s += keyLabel
+        return s
+    }
+
+    private var keyLabel: String {
+        switch key.character {
+        case "\r": return "↵"
+        case " ":  return "Space"
+        case "\\": return "\\"
+        default:   return String(key.character).uppercased()
+        }
+    }
+
+    /// The complete, ordered catalogue shown in the cheat sheet.
+    static let all: [KorboShortcut] = [
+        // Navigation
+        .init(key: "p", modifiers: .command, title: "Command palette", group: "Navigation"),
+        .init(key: "k", modifiers: .command, title: "Search everything", group: "Navigation"),
+        .init(key: "l", modifiers: [.command, .shift], title: "Focus composer", group: "Navigation"),
+        // Panels
+        .init(key: "\\", modifiers: .command, title: "Toggle right panel", group: "Panels"),
+        .init(key: "1", modifiers: .command, title: "Show Git", group: "Panels"),
+        .init(key: "2", modifiers: .command, title: "Show Files", group: "Panels"),
+        .init(key: "3", modifiers: .command, title: "Show Context", group: "Panels"),
+        .init(key: "t", modifiers: .command, title: "Toggle terminal", group: "Panels"),
+        // Session
+        .init(key: "n", modifiers: .command, title: "New session", group: "Session"),
+        .init(key: ".", modifiers: .command, title: "Stop generation", group: "Session"),
+        .init(key: .return, modifiers: .command, title: "Send message", group: "Session"),
+        // App
+        .init(key: ",", modifiers: .command, title: "Settings", group: "App"),
+        .init(key: "/", modifiers: .command, title: "Keyboard shortcuts", group: "App"),
+    ]
+}
+
 /// Invisible buttons whose only job is to register window-wide hardware-keyboard
 /// shortcuts (and populate the ⌘-hold discoverability HUD). Kept off-screen so
 /// they never affect layout.
+///
+/// Registration is intentionally written as explicit `Button`s grouped in
+/// `Group`s (not a `ForEach`): SwiftUI only reliably installs the keyboard
+/// shortcut of the *first* dynamically-generated button when they share a
+/// zero-size overlapping container, so a `ForEach` silently drops every
+/// shortcut after the first. The grouped explicit form is the proven layout.
+/// The cheat sheet (`ShortcutsCheatSheet`) reads `KorboShortcut.all` for its
+/// display, so the two stay in lockstep — keep both in sync when editing.
 private struct GlobalShortcuts: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
@@ -235,31 +299,84 @@ private struct GlobalShortcuts: View {
                     .keyboardShortcut("p", modifiers: .command)
                 Button("Search Everything") { app.toggleCommandPalette() }
                     .keyboardShortcut("k", modifiers: .command)
-                Button("New Session") { Task { await store.createSession() } }
-                    .keyboardShortcut("n", modifiers: .command)
-                Button("Stop Generation") { Task { await store.abort() } }
-                    .keyboardShortcut(".", modifiers: .command)
                 Button("Focus Composer") { app.focusComposer() }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
                 Button("Toggle Right Panel") { app.showRightSidebar.toggle() }
                     .keyboardShortcut("\\", modifiers: .command)
-            }
-            Group {
                 Button("Show Git") { app.showRightTab(.git) }
                     .keyboardShortcut("1", modifiers: .command)
                 Button("Show Files") { app.showRightTab(.files) }
                     .keyboardShortcut("2", modifiers: .command)
+            }
+            Group {
                 Button("Show Context") { app.showRightTab(.context) }
                     .keyboardShortcut("3", modifiers: .command)
                 Button("Toggle Terminal") { app.toggleTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
+                Button("New Session") { Task { await store.createSession() } }
+                    .keyboardShortcut("n", modifiers: .command)
+                Button("Stop Generation") { Task { await store.abort() } }
+                    .keyboardShortcut(".", modifiers: .command)
                 Button("Settings") { app.showSettingsSheet = true }
                     .keyboardShortcut(",", modifiers: .command)
+                Button("Keyboard Shortcuts") { app.toggleShortcutsCheatSheet() }
+                    .keyboardShortcut("/", modifiers: .command)
             }
         }
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+}
+
+/// Grouped, read-only reference of every hardware-keyboard shortcut, shown as a
+/// sheet via ⌘/. Sourced entirely from `KorboShortcut.all`.
+struct ShortcutsCheatSheet: View {
+    @EnvironmentObject private var app: AppModel
+
+    private var groups: [(name: String, items: [KorboShortcut])] {
+        var order: [String] = []
+        var bucket: [String: [KorboShortcut]] = [:]
+        for s in KorboShortcut.all {
+            if bucket[s.group] == nil { order.append(s.group) }
+            bucket[s.group, default: []].append(s)
+        }
+        return order.map { ($0, bucket[$0] ?? []) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(groups, id: \.name) { group in
+                    Section(group.name) {
+                        ForEach(group.items) { shortcut in
+                            HStack {
+                                Text(shortcut.title)
+                                    .foregroundStyle(Theme.textPrimary)
+                                Spacer()
+                                Text(shortcut.display)
+                                    .font(.system(.body, design: .rounded).weight(.semibold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .fill(Theme.panelRaised)
+                                    )
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Keyboard Shortcuts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { app.showShortcutsCheatSheet = false }
+                }
+            }
+        }
     }
 }
 

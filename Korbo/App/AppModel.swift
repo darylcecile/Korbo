@@ -23,6 +23,11 @@ final class AppModel: ObservableObject {
     /// Command palette (⌘P / ⌘K) overlay.
     @Published var showCommandPalette = false
 
+    /// Keyboard-shortcut cheat sheet (⌘/) overlay.
+    @Published var showShortcutsCheatSheet = false
+
+    func toggleShortcutsCheatSheet() { showShortcutsCheatSheet.toggle() }
+
     /// The chat composer text, lifted here so the command palette (and future
     /// `@`/`/`/`!` autocomplete) can prefill it. `ChatPane` binds its TextField
     /// to this and clears it on send.

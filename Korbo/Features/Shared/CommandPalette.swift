@@ -187,6 +187,8 @@ struct CommandPalette: View {
                         subtitle: nil, group: "Actions") { perform { app.showConnectionSheet = true } },
             PaletteItem(id: "act-reload", icon: "arrow.clockwise", title: "Reload sessions",
                         subtitle: nil, group: "Actions") { perform { Task { await store.reloadSessions() } } },
+            PaletteItem(id: "act-shortcuts", icon: "keyboard", title: "Keyboard Shortcuts",
+                        subtitle: "⌘/", group: "Actions") { perform { app.showShortcutsCheatSheet = true } },
         ]
         if store.isGenerating {
             out.insert(

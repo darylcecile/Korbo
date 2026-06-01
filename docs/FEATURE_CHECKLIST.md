@@ -166,7 +166,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [~] P1 Chat settings (default model/agent, context length, render mode, limits) — new Settings → Chat section: "Render markdown" toggle (off ⇒ assistant `.text` parts render as raw selectable monospaced source; `MessageView` observes `AppearanceStore` so it recolours live — verified on device flipping the Alpha compaction summary to raw `## Goal` markdown) persisted to UserDefaults; default model + default agent surfaced read-only (sourced from composer pickers). Context length + per-session limits still pending
 - [ ] P1 Notifications: enable, per‑template text, sound
 - [ ] P1 Sessions: retention (archive/delete, period, auto‑cleanup)
-- [ ] P1 Keyboard shortcuts: view + customize + conflict detection
+- [~] P1 Keyboard shortcuts: view (⌘/ cheat sheet + command-palette "Keyboard Shortcuts" action; grouped Navigation/Panels/Session/App with key chips). Customize + conflict detection still pending.
 - [ ] P1 Git identities editor
 - [ ] P2 Behavior: auto‑commit/PR/branch/stash, permission auto‑rules
 - [ ] P2 Usage & quota (per‑provider, pace, limits)
