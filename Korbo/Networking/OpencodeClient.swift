@@ -31,11 +31,15 @@ enum OpencodeError: LocalizedError {
 /// documented in docs/OPENCODE_API.md.
 actor OpencodeClient {
     let config: ServerConfig
+    /// When set, scopes every request to this project (opencode `?directory=`
+    /// worktree). `nil` uses the server's default/current project.
+    let directory: String?
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    init(config: ServerConfig, session: URLSession? = nil) {
+    init(config: ServerConfig, directory: String? = nil, session: URLSession? = nil) {
         self.config = config
+        self.directory = directory
         if let session {
             self.session = session
         } else {
@@ -53,6 +57,17 @@ actor OpencodeClient {
     func health() async throws -> Bool {
         let (_, response) = try await raw(.get, "/global/health")
         return (response as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    /// `GET /project` — all projects (workspace roots) this server hosts.
+    func listProjects() async throws -> [OCProject] {
+        try await getJSON("/project")
+    }
+
+    /// `GET /project/current` — the server's default/active project (used to
+    /// highlight the right entry before the user has switched explicitly).
+    func currentProject() async throws -> OCProject {
+        try await getJSON("/project/current")
     }
 
     /// `GET /session` — list sessions for the connected instance.
@@ -414,7 +429,14 @@ actor OpencodeClient {
 
     nonisolated private func makeURL(_ path: String) -> URL? {
         guard let base = config.baseURL else { return nil }
-        return URL(string: base.absoluteString + path)
+        var full = base.absoluteString + path
+        // Scope to the selected project. opencode reads `directory` from the
+        // query string on every endpoint (verified: global, vcs, file, session).
+        if let directory, !directory.isEmpty {
+            let sep = path.contains("?") ? "&" : "?"
+            full += "\(sep)directory=\(Self.queryEncode(directory))"
+        }
+        return URL(string: full)
     }
 
     // MARK: - Provider authentication (OAuth / sign-in methods)

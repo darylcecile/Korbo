@@ -55,6 +55,12 @@ final class KorboStore: ObservableObject {
     @Published private(set) var providerAuthMethods: [String: [ProviderAuthMethod]] = [:]
     @Published private(set) var agents: [OCAgent] = []
     @Published private(set) var commands: [OCCommand] = []
+    /// All projects the connected server hosts (`GET /project`). A server can
+    /// serve many; the user switches between them in the sessions sidebar.
+    @Published private(set) var projects: [OCProject] = []
+    /// The active project's worktree directory, threaded onto every request as
+    /// `?directory=`. `nil` means the server's default/current project.
+    @Published private(set) var selectedProjectDirectory: String?
     @Published private(set) var isLoadingMessages = false
     @Published private(set) var isSummarizing = false
     @Published private(set) var lastError: String?
@@ -164,7 +170,8 @@ final class KorboStore: ObservableObject {
         await teardown()
         status = .connecting
         lastError = nil
-        let client = OpencodeClient(config: server)
+        selectedProjectDirectory = restoreSelectedProject(for: server.id)
+        let client = OpencodeClient(config: server, directory: selectedProjectDirectory)
         self.client = client
 
         do {
@@ -174,6 +181,7 @@ final class KorboStore: ObservableObject {
                 return
             }
             status = .connected
+            await loadProjects()
             await reloadSessions()
             await loadMetadata()
             await loadGit()
@@ -210,6 +218,7 @@ final class KorboStore: ObservableObject {
         ptys = []
         shells = []
         activePtyID = nil
+        projects = []
     }
 
     // MARK: - Loading
@@ -228,6 +237,71 @@ final class KorboStore: ObservableObject {
         } catch {
             lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    // MARK: - Projects
+
+    /// The currently-selected project object, if known from the loaded list.
+    var selectedProject: OCProject? {
+        guard let dir = selectedProjectDirectory else { return nil }
+        return projects.first { $0.scopeDirectory == dir }
+    }
+
+    /// Display name for the active project, falling back to the worktree leaf
+    /// when the project list hasn't loaded (or the server predates `/project`).
+    var selectedProjectName: String? {
+        if let p = selectedProject { return p.name }
+        guard let dir = selectedProjectDirectory, !dir.isEmpty else { return nil }
+        let leaf = (dir as NSString).lastPathComponent
+        return leaf.isEmpty ? dir : leaf
+    }
+
+    /// Fetch the server's project list and, on first connect, adopt its current
+    /// project so the switcher highlights the right entry. Degrades gracefully
+    /// on servers that don't expose `/project`.
+    func loadProjects() async {
+        guard let client else { return }
+        do {
+            let list = try await client.listProjects()
+            projects = list.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+            if selectedProjectDirectory == nil,
+               let current = try? await client.currentProject() {
+                selectedProjectDirectory = current.scopeDirectory
+            }
+        } catch {
+            projects = []
+        }
+    }
+
+    /// Switch the active project: persist the choice, clear the now-stale session
+    /// selection, and reconnect so every request (sessions, files, vcs, events)
+    /// re-scopes to the new directory via `?directory=`. `directory` is a
+    /// project's `scopeDirectory` (sandbox when present, else worktree).
+    func switchProject(to directory: String) async {
+        guard selectedProjectDirectory != directory else { return }
+        selectedProjectDirectory = directory
+        persistSelectedProject(directory, for: servers.selectedServerID)
+        selectedSessionID = nil
+        messages = []
+        await connect()
+    }
+
+    private static let selectedProjectKey = "korbo.selectedProject.v2"
+
+    private func restoreSelectedProject(for serverID: UUID?) -> String? {
+        guard let serverID else { return nil }
+        let map = UserDefaults.standard.dictionary(forKey: Self.selectedProjectKey) as? [String: String] ?? [:]
+        return map[serverID.uuidString]
+    }
+
+    private func persistSelectedProject(_ directory: String?, for serverID: UUID?) {
+        guard let serverID else { return }
+        var map = UserDefaults.standard.dictionary(forKey: Self.selectedProjectKey) as? [String: String] ?? [:]
+        if let directory { map[serverID.uuidString] = directory }
+        else { map.removeValue(forKey: serverID.uuidString) }
+        UserDefaults.standard.set(map, forKey: Self.selectedProjectKey)
     }
 
     private func loadMetadata() async {

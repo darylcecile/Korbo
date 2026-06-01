@@ -21,6 +21,7 @@ struct SessionsSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar
+            projectBar
             if showSearch { searchField }
             content
             Spacer(minLength: 0)
@@ -80,6 +81,59 @@ struct SessionsSidebar: View {
     }
     private var deleteBinding: Binding<Bool> {
         Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
+    }
+
+    // MARK: Project switcher
+
+    /// Workspace/project switcher: a server can host many projects (opencode
+    /// `?directory=` worktrees). Shows the active one and lets the user switch,
+    /// re-scoping all sessions, files and git to that project.
+    @ViewBuilder
+    private var projectBar: some View {
+        if !isSelectMode, store.status.isConnected,
+           store.selectedProjectName != nil || store.projects.count > 1 {
+            Menu {
+                Section("Project") {
+                    ForEach(store.projects) { project in
+                        Button {
+                            Task { await store.switchProject(to: project.scopeDirectory) }
+                        } label: {
+                            if project.scopeDirectory == store.selectedProjectDirectory {
+                                Label(project.name, systemImage: "checkmark")
+                            } else {
+                                Text(project.name)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text(store.selectedProjectName ?? "Project")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if store.projects.count > 1 {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panelRaised))
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
+            .disabled(store.projects.count <= 1)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+            .accessibilityLabel("Project \(store.selectedProjectName ?? "none")")
+            .accessibilityHint("Switch project")
+        }
     }
 
     // MARK: Toolbar

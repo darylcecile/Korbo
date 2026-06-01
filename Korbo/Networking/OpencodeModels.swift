@@ -99,6 +99,38 @@ struct OCModelRef: Codable, Hashable {
     var variant: String?
 }
 
+// MARK: - Project
+
+/// A project (workspace root) hosted by an opencode server, as returned by
+/// `GET /project` and `GET /project/current`. A single server can serve many
+/// projects; requests select one via the `?directory=` query param (the
+/// project's `worktree`).
+struct OCProject: Codable, Identifiable, Hashable {
+    let id: String
+    var worktree: String
+    var vcs: String?
+    var sandboxes: [String]?
+
+    /// The directory to send as `?directory=` so the server scopes sessions,
+    /// vcs and files to this project. opencode stores sessions against the
+    /// exact working directory, which for sandboxed projects is the sandbox —
+    /// not the top-level worktree. Falls back to the worktree when no sandbox.
+    var scopeDirectory: String {
+        if let sandbox = sandboxes?.first(where: { !$0.isEmpty }) { return sandbox }
+        return worktree
+    }
+
+    /// Display name — the last path component of the worktree, except for
+    /// git-internal worktrees (`…/.git/modules/…`) whose worktree leaf is the
+    /// meaningless "modules"; there we use the sandbox leaf instead.
+    var name: String {
+        let source = worktree.contains("/.git/") ? scopeDirectory : worktree
+        let leaf = (source as NSString).lastPathComponent
+        return leaf.isEmpty ? source : leaf
+    }
+}
+
+
 // MARK: - Messages & parts
 
 enum OCMessageRole: String, Codable { case user, assistant }
