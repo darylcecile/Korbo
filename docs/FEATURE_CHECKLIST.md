@@ -76,6 +76,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 Error state (+ retry) — connection-failure banner with `lastError` + Retry (see Connection-status banner)
 - [ ] P1 Pending‑changes bar (unstaged git) — intentionally dropped (redundant with the git panel)
 - [x] P1 Auto‑scroll w/ "scroll to bottom" affordance
+- [x] P1 Find in conversation — magnifier button in the chat header reveals a search bar (`X/N` match count, prev/next chevrons, Enter = next, Esc closes); matching messages are highlighted and the list auto-scrolls to the active match; pure client over loaded message parts; verified on device
 - [ ] P2 Inline code comments / drafts
 
 ## 4. Composer

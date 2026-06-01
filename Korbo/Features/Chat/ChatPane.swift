@@ -14,6 +14,14 @@ struct ChatPane: View {
     @State private var isDropTargeted = false
     @FocusState private var composerFocused: Bool
 
+    // Find-in-conversation (local to this view; no app-level state).
+    @State private var isSearching = false
+    @State private var searchQuery = ""
+    @State private var searchMatchIDs: [String] = []
+    @State private var currentMatchIndex = 0
+    @State private var searchScrollTick = 0
+    @FocusState private var searchFocused: Bool
+
     // Snippets library
     @StateObject private var snippetStore = SnippetStore.shared
     @State private var showSnippetsSheet = false
@@ -46,6 +54,7 @@ struct ChatPane: View {
         VStack(spacing: 0) {
             header
             Divider().overlay(Theme.border)
+            searchBar
             messages
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     composer
@@ -53,7 +62,14 @@ struct ChatPane: View {
         }
         .background(Theme.bg)
         .onAppear { app.bindDraft(to: store.selectedSessionID) }
-        .onChange(of: store.selectedSessionID) { _, id in app.bindDraft(to: id) }
+        .onChange(of: store.selectedSessionID) { _, id in
+            app.bindDraft(to: id)
+            closeSearch()
+        }
+        .onChange(of: searchQuery) { _, _ in recomputeMatches() }
+        .onChange(of: store.messages) { _, _ in
+            if isSearching { recomputeMatches() }
+        }
     }
 
     // MARK: Header
@@ -89,6 +105,15 @@ struct ChatPane: View {
 
             if store.selectedSessionID != nil && !store.messages.isEmpty {
                 Button {
+                    toggleSearch()
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .buttonStyle(.plain)
+                .help("Find in conversation")
+                .accessibilityLabel("Find in conversation")
+
+                Button {
                     Task { await store.summarize() }
                 } label: {
                     if store.isSummarizing {
@@ -113,6 +138,124 @@ struct ChatPane: View {
         .font(.system(size: 14))
         .foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 18).padding(.vertical, 12)
+    }
+
+    // MARK: Find-in-conversation
+
+    @ViewBuilder
+    private var searchBar: some View {
+        if isSearching {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textTertiary)
+                    .accessibilityHidden(true)
+
+                TextField("Find in conversation", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.textPrimary)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .onSubmit { goToMatch(1) }
+                    .accessibilityLabel("Search text")
+
+                if !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text(matchCountLabel)
+                        .font(.system(size: 12))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                        .accessibilityLabel(matchCountLabel)
+                }
+
+                Button { goToMatch(-1) } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .buttonStyle(.plain)
+                .disabled(searchMatchIDs.isEmpty)
+                .accessibilityLabel("Previous match")
+
+                Button { goToMatch(1) } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .buttonStyle(.plain)
+                .disabled(searchMatchIDs.isEmpty)
+                .accessibilityLabel("Next match")
+
+                Button { closeSearch() } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close search")
+            }
+            .font(.system(size: 14))
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, 18).padding(.vertical, 8)
+            .background(Theme.panel)
+            .overlay(Divider().overlay(Theme.border), alignment: .bottom)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    private var matchCountLabel: String {
+        searchMatchIDs.isEmpty ? "No results"
+            : "\(currentMatchIndex + 1)/\(searchMatchIDs.count)"
+    }
+
+    /// The message id of the currently selected match, if any.
+    private var currentMatchID: String? {
+        guard isSearching, searchMatchIDs.indices.contains(currentMatchIndex) else { return nil }
+        return searchMatchIDs[currentMatchIndex]
+    }
+
+    /// Flattened, searchable text for a message (visible text/reasoning plus
+    /// tool titles and outputs already loaded in the store).
+    private func searchableText(_ item: OCMessageItem) -> String {
+        var pieces: [String] = []
+        for part in item.parts {
+            if let text = part.text, !text.isEmpty { pieces.append(text) }
+            if let title = part.state?.title, !title.isEmpty { pieces.append(title) }
+            if let output = part.state?.output, !output.isEmpty { pieces.append(output) }
+        }
+        return pieces.joined(separator: "\n")
+    }
+
+    private func recomputeMatches() {
+        let query = searchQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            searchMatchIDs = []
+            currentMatchIndex = 0
+            return
+        }
+        let ids = store.messages
+            .filter { searchableText($0).range(of: query, options: .caseInsensitive) != nil }
+            .map(\.id)
+        searchMatchIDs = ids
+        currentMatchIndex = 0
+        if !ids.isEmpty { searchScrollTick &+= 1 }
+    }
+
+    private func goToMatch(_ delta: Int) {
+        guard !searchMatchIDs.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + delta + searchMatchIDs.count) % searchMatchIDs.count
+        searchScrollTick &+= 1
+    }
+
+    private func toggleSearch() {
+        if isSearching {
+            closeSearch()
+        } else {
+            withAnimation(.easeInOut(duration: 0.2)) { isSearching = true }
+            DispatchQueue.main.async { searchFocused = true }
+        }
+    }
+
+    private func closeSearch() {
+        withAnimation(.easeInOut(duration: 0.2)) { isSearching = false }
+        searchQuery = ""
+        searchMatchIDs = []
+        currentMatchIndex = 0
+        searchFocused = false
     }
 
     // MARK: Model & agent pickers
@@ -324,6 +467,14 @@ struct ChatPane: View {
                                     ForEach(store.messages) { item in
                                         MessageView(item: item)
                                             .id(item.id)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .stroke(Theme.accent, lineWidth: 2)
+                                                    .padding(-6)
+                                                    .opacity(item.id == currentMatchID ? 1 : 0)
+                                                    .animation(.easeInOut(duration: 0.2), value: currentMatchID)
+                                                    .allowsHitTesting(false)
+                                            )
                                     }
                                     ForEach(sessionPermissions) { permission in
                                         PermissionCard(permission: permission) { response in
@@ -368,6 +519,10 @@ struct ChatPane: View {
                         .onChange(of: streamSignature) { _, _ in
                             guard isPinnedToBottom else { return }
                             withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .onChange(of: searchScrollTick) { _, _ in
+                            guard let target = currentMatchID else { return }
+                            withAnimation { proxy.scrollTo(target, anchor: .center) }
                         }
 
                         if !isPinnedToBottom {
