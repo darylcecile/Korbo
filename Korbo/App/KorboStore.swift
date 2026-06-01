@@ -1300,7 +1300,7 @@ final class KorboStore: ObservableObject {
             // `{ sessionID, status: { type: "busy" | "idle" | … } }`
             if let sid = props["sessionID"]?.stringValue {
                 let kind = props["status"]?["type"]?.stringValue
-                if kind == "idle" { markIdle(sid) } else { activeSessionIDs.insert(sid) }
+                if kind == "idle" { markIdle(sid) } else { runStarted(sid) }
             }
         case .sessionIdle:
             if let sid = props["sessionID"]?.stringValue { markIdle(sid) }
@@ -1333,18 +1333,42 @@ final class KorboStore: ObservableObject {
             if let permission = props.decode(OCPermission.self) ?? props["info"]?.decode(OCPermission.self) {
                 if !pendingPermissions.contains(where: { $0.id == permission.id }) {
                     pendingPermissions.append(permission)
+                    let detail = permission.title ?? permission.type ?? "Approval required"
+                    NotificationManager.shared.notify(
+                        title: "Permission needed",
+                        body: "\(sessionTitle(permission.sessionID)): \(detail)")
+                    LiveActivityController.shared.update(status: "Needs permission", tokens: nil, isActive: true)
                 }
             }
         case .questionAsked:
             if let question = props.decode(OCQuestion.self) ?? props["info"]?.decode(OCQuestion.self) {
                 if !pendingQuestions.contains(where: { $0.id == question.id }) {
                     pendingQuestions.append(question)
+                    let detail = question.questions.first?.header
+                        ?? question.questions.first?.question
+                        ?? "The agent needs your input"
+                    NotificationManager.shared.notify(
+                        title: "Agent has a question",
+                        body: "\(sessionTitle(question.sessionID)): \(detail)")
+                    LiveActivityController.shared.update(status: "Has a question", tokens: nil, isActive: true)
                 }
             }
         case .questionReplied, .questionRejected:
             let rid = props["requestID"]?.stringValue ?? props["id"]?.stringValue
             if let rid { pendingQuestions.removeAll { $0.id == rid } }
-        case .sessionError, .serverConnected:
+        case .sessionError:
+            if let sid = props["sessionID"]?.stringValue {
+                let wasActive = activeSessionIDs.contains(sid)
+                activeSessionIDs.remove(sid)
+                if wasActive {
+                    NotificationManager.shared.notify(
+                        title: "Run failed",
+                        body: "\(sessionTitle(sid)) ran into an error")
+                }
+                LiveActivityController.shared.end(status: "Failed")
+                if activeSessionIDs.isEmpty { NotificationManager.shared.endBackgroundGrace() }
+            }
+        case .serverConnected:
             break // handled in later milestones
         case .fileEdited, .vcsBranchUpdated, .sessionDiff:
             // The working tree or branch changed — refresh the Git panel.
@@ -1356,10 +1380,47 @@ final class KorboStore: ObservableObject {
     /// final authoritative state (completed time, cost, tokens) is correct even if
     /// some streamed frames were missed.
     private func markIdle(_ sessionID: String) {
+        let wasActive = activeSessionIDs.contains(sessionID)
         activeSessionIDs.remove(sessionID)
         pendingPermissions.removeAll { $0.sessionID == sessionID }
+        if wasActive {
+            NotificationManager.shared.notify(
+                title: "Run finished",
+                body: "\(sessionTitle(sessionID)) is done")
+            LiveActivityController.shared.end(status: "Finished")
+        }
+        if activeSessionIDs.isEmpty { NotificationManager.shared.endBackgroundGrace() }
         if sessionID == selectedSessionID {
             Task { [weak self] in await self?.loadMessages(sessionID: sessionID) }
+        }
+    }
+
+    /// A session just started (or is continuing) a run. Tracks it as active and,
+    /// on the leading edge, spins up a Live Activity so the run is visible on the
+    /// lock screen while the app is backgrounded.
+    private func runStarted(_ sessionID: String) {
+        let alreadyActive = activeSessionIDs.contains(sessionID)
+        activeSessionIDs.insert(sessionID)
+        guard !alreadyActive else { return }
+        NotificationManager.shared.beginBackgroundGrace()
+        let session = sessions.first { $0.id == sessionID }
+        LiveActivityController.shared.start(
+            sessionTitle: session?.title ?? "Korbo session",
+            model: session?.model?.modelID ?? selectedModelOverride?.modelID ?? "")
+    }
+
+    /// Human-readable title for a session id, for notification bodies.
+    private func sessionTitle(_ sessionID: String) -> String {
+        sessions.first { $0.id == sessionID }?.title ?? "Korbo session"
+    }
+
+    /// On returning to the foreground, drop any Live Activity that's lingering
+    /// for a run we no longer consider active (e.g. the `idle` event arrived
+    /// while the app was suspended and never got processed).
+    func reconcileLiveActivitiesOnForeground() {
+        if activeSessionIDs.isEmpty {
+            LiveActivityController.shared.end(status: "Finished")
+            NotificationManager.shared.endBackgroundGrace()
         }
     }
 

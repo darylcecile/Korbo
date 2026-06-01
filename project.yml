@@ -26,8 +26,6 @@ targets:
     platform: iOS
     sources:
       - path: Korbo
-    dependencies:
-      - package: SwiftTerm
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.Korbo
@@ -45,6 +43,25 @@ targets:
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         INFOPLIST_KEY_UIRequiresFullScreen: NO
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+    dependencies:
+      - package: SwiftTerm
+      - target: KorboWidgets
+
+  KorboWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: KorboWidgets
+      - path: Korbo/Shared/KorboActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.Korbo.KorboWidgets
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        INFOPLIST_FILE: KorboWidgets/Info.plist
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+        SKIP_INSTALL: YES
 
   KorboTests:
     type: bundle.unit-test

@@ -7,6 +7,7 @@ struct KorboApp: App {
     @StateObject private var github = GitHubStore()
     @ObservedObject private var intents = IntentRouter.shared
     @ObservedObject private var appearance = AppearanceStore.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -16,6 +17,8 @@ struct KorboApp: App {
                     // Attempt to connect to the selected server on launch. If no
                     // credentials are stored yet this surfaces a failed state and
                     // the user can open the connection sheet.
+                    NotificationManager.shared.requestAuthorizationIfNeeded()
+                    LiveActivityController.shared.endStaleOnLaunch()
                     if store.servers.selectedServer != nil {
                         await store.connect()
                     }
@@ -23,6 +26,9 @@ struct KorboApp: App {
                 .onChange(of: intents.pending) { _, pending in
                     guard let pending else { return }
                     Task { await handleIntent(pending) }
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { store.reconcileLiveActivitiesOnForeground() }
                 }
         }
 
