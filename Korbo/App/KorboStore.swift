@@ -70,6 +70,19 @@ final class KorboStore: ObservableObject {
     /// Live text filter applied to the sessions sidebar (matches title/project).
     @Published var sessionQuery: String = ""
 
+    /// How the sessions sidebar is grouped and ordered (persisted).
+    @Published private(set) var sessionGrouping: SessionGrouping = .recency
+    @Published private(set) var sessionSort: SessionSort = .recent
+
+    func setSessionGrouping(_ g: SessionGrouping) {
+        sessionGrouping = g
+        UserDefaults.standard.set(g.rawValue, forKey: Self.groupingDefaultsKey)
+    }
+    func setSessionSort(_ s: SessionSort) {
+        sessionSort = s
+        UserDefaults.standard.set(s.rawValue, forKey: Self.sortDefaultsKey)
+    }
+
     /// File explorer (read-only) state. The tree loads lazily one directory at a
     /// time: `fileChildren[dirPath]` holds that directory's entries once fetched.
     @Published private(set) var fileChildren: [String: [OCFileNode]] = [:]
@@ -229,6 +242,8 @@ final class KorboStore: ObservableObject {
 
     private static let modelDefaultsKey = "korbo.selectedModel"
     private static let agentDefaultsKey = "korbo.selectedAgent"
+    private static let groupingDefaultsKey = "korbo.sessionGrouping"
+    private static let sortDefaultsKey = "korbo.sessionSort"
 
     private func loadModelAgentPreferences() {
         let defaults = UserDefaults.standard
@@ -237,6 +252,10 @@ final class KorboStore: ObservableObject {
             selectedModelOverride = ref
         }
         selectedAgentName = defaults.string(forKey: Self.agentDefaultsKey)
+        if let raw = defaults.string(forKey: Self.groupingDefaultsKey),
+           let g = SessionGrouping(rawValue: raw) { sessionGrouping = g }
+        if let raw = defaults.string(forKey: Self.sortDefaultsKey),
+           let s = SessionSort(rawValue: raw) { sessionSort = s }
     }
 
     /// Choose the model for new prompts. Pass `nil` to fall back to auto-resolution.
@@ -534,6 +553,32 @@ final class KorboStore: ObservableObject {
         }
     }
 
+    /// One-shot fuzzy file search for composer `@` mentions (independent of the
+    /// Files-tab search state). Returns `[]` on error.
+    func findFiles(_ query: String, limit: Int = 8) async -> [String] {
+        guard let client else { return [] }
+        return (try? await client.findFiles(query: query, limit: limit)) ?? []
+    }
+
+    /// Build a composer attachment from a workspace file referenced via an `@`
+    /// mention. Returns `nil` for binary/unreadable files so the caller can fall
+    /// back to inserting the path as plain text. The file's text is embedded as a
+    /// data URL (the same proven mechanism as picked-file attachments) so the
+    /// agent receives its contents.
+    func fileMentionAttachment(path: String) async -> ComposerAttachment? {
+        guard let client else { return nil }
+        do {
+            let file = try await client.readFile(path: path)
+            guard !file.isBinary, let text = file.content else { return nil }
+            let mime = "text/plain"
+            let b64 = Data(text.utf8).base64EncodedString()
+            return ComposerAttachment(filename: path, mime: mime,
+                                      dataURL: "data:\(mime);base64,\(b64)")
+        } catch {
+            return nil
+        }
+    }
+
     /// One-shot fuzzy file search for the command palette. Independent of the
     /// Files-pane search state so the two don't interfere.
     func paletteFileSearch(_ query: String, limit: Int = 25) async -> [String] {
@@ -588,7 +633,8 @@ final class KorboStore: ObservableObject {
     func togglePin(_ id: String) { setPinned(id, pinned: !isPinned(id)) }
 
     /// Root sessions (sub-sessions/forks are hidden from the top list) matching
-    /// the current `sessionQuery`, bucketed into recency groups plus Archived.
+    /// the current `sessionQuery`, grouped per `sessionGrouping` and ordered per
+    /// `sessionSort`.
     var sessionGroups: [SessionGroup] {
         let q = sessionQuery.trimmingCharacters(in: .whitespaces).lowercased()
         let visible = sessions.filter { session in
@@ -597,15 +643,54 @@ final class KorboStore: ObservableObject {
             return (session.title ?? "").lowercased().contains(q)
                 || (session.projectName ?? "").lowercased().contains(q)
         }
+        switch sessionGrouping {
+        case .recency: return recencyGroups(visible)
+        case .project: return projectGroups(visible)
+        }
+    }
 
+    private func sortedSessions(_ items: [OCSession]) -> [OCSession] {
+        switch sessionSort {
+        case .recent:
+            return items.sorted { ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast) }
+        case .name:
+            return items.sorted {
+                ($0.title ?? "Untitled session").localizedCaseInsensitiveCompare($1.title ?? "Untitled session") == .orderedAscending
+            }
+        }
+    }
+
+    private func recencyGroups(_ visible: [OCSession]) -> [SessionGroup] {
         var buckets: [SessionBucket: [OCSession]] = [:]
         for session in visible {
             buckets[bucket(for: session), default: []].append(session)
         }
         return SessionBucket.allCases.compactMap { b in
             guard let items = buckets[b], !items.isEmpty else { return nil }
-            return SessionGroup(bucket: b, sessions: items)
+            return SessionGroup(id: b.id, title: b.title, sessions: sortedSessions(items), bucket: b)
         }
+    }
+
+    private func projectGroups(_ visible: [OCSession]) -> [SessionGroup] {
+        let active = visible.filter { !$0.isArchived }
+        let archived = visible.filter { $0.isArchived }
+        var byProject: [String: [OCSession]] = [:]
+        for session in active {
+            byProject[session.projectName ?? "No project", default: []].append(session)
+        }
+        // Order project groups by their most-recent activity (most active first).
+        var groups: [SessionGroup] = byProject.map { name, items in
+            SessionGroup(id: "project:\(name)", title: name, sessions: sortedSessions(items), bucket: nil)
+        }
+        .sorted { a, b in
+            (a.sessions.first?.lastActivity ?? .distantPast) > (b.sessions.first?.lastActivity ?? .distantPast)
+        }
+        if !archived.isEmpty {
+            groups.append(SessionGroup(id: SessionBucket.archived.id,
+                                       title: SessionBucket.archived.title,
+                                       sessions: sortedSessions(archived), bucket: .archived))
+        }
+        return groups
     }
 
     private func bucket(for session: OCSession) -> SessionBucket {
@@ -644,6 +729,80 @@ final class KorboStore: ObservableObject {
             lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
         }
     }
+
+    /// `POST /session/{id}/fork` — duplicate a session, insert the new copy, and
+    /// select it. Returns the new session so callers can react (e.g. focus it).
+    @discardableResult
+    func forkSession(_ id: String) async -> OCSession? {
+        guard let client else { return nil }
+        do {
+            let fork = try await client.forkSession(id)
+            upsertSession(fork)
+            await selectSession(fork.id)
+            return fork
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+            return nil
+        }
+    }
+
+    /// `POST /session/{id}/share` — publish a public link, merge the updated
+    /// session, and return the share URL.
+    @discardableResult
+    func shareSession(_ id: String) async -> String? {
+        guard let client else { return nil }
+        do {
+            let updated = try await client.shareSession(id)
+            upsertSession(updated)
+            return updated.shareURL
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+            return nil
+        }
+    }
+
+    /// `DELETE /session/{id}/share` — revoke the public link.
+    func unshareSession(_ id: String) async {
+        guard let client else { return }
+        do {
+            let updated = try await client.unshareSession(id)
+            upsertSession(updated)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Run a registered `/command` against the selected session. Like `sendPrompt`,
+    /// the reply streams over `/global/event`; mark active immediately and reload
+    /// once so the command's user message renders.
+    func runCommand(_ command: String, arguments: String) async {
+        guard let client, let sid = selectedSessionID else { return }
+        activeSessionIDs.insert(sid)
+        do {
+            try await client.runCommand(sessionID: sid, command: command,
+                                        arguments: arguments,
+                                        agent: resolveAgent(), model: resolveModel())
+            await loadMessages(sessionID: sid)
+        } catch {
+            activeSessionIDs.remove(sid)
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Whether `text` is a bare `/command` invocation matching a known command.
+    /// Returns the command name and trailing arguments when it is.
+    func parseCommand(_ text: String) -> (name: String, arguments: String)? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"), trimmed.count > 1 else { return nil }
+        let body = trimmed.dropFirst()
+        let parts = body.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+        let name = String(parts[0])
+        guard commands.contains(where: { $0.name == name }) else { return nil }
+        let args = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : ""
+        return (name, args)
+    }
+
+    // MARK: - Session delete
 
     /// Delete a session; if it was selected, fall back to the next available one.
     func deleteSession(_ id: String) async {
@@ -948,8 +1107,45 @@ enum SessionBucket: String, CaseIterable, Identifiable {
 
 /// A titled section of sessions for the sidebar.
 struct SessionGroup: Identifiable {
-    let bucket: SessionBucket
+    let id: String
+    let title: String
     let sessions: [OCSession]
-    var id: String { bucket.id }
-    var title: String { bucket.title }
+    /// Recency bucket when grouped by recency; `nil` for project groups.
+    var bucket: SessionBucket?
+}
+
+/// How sessions in the sidebar are grouped.
+enum SessionGrouping: String, CaseIterable, Identifiable {
+    case recency, project
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recency: return "Recency"
+        case .project: return "Project"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .recency: return "clock"
+        case .project: return "folder"
+        }
+    }
+}
+
+/// How sessions within a group are ordered.
+enum SessionSort: String, CaseIterable, Identifiable {
+    case recent, name
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent: return "Most recent"
+        case .name: return "Name"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .recent: return "arrow.down.circle"
+        case .name: return "textformat"
+        }
+    }
 }

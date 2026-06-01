@@ -11,6 +11,12 @@ struct ChatPane: View {
     @State private var isPinnedToBottom = true
     @FocusState private var composerFocused: Bool
 
+    // Composer autocomplete (`@` files/agents, `/` commands).
+    @State private var suggestions: [ComposerSuggestion] = []
+    @State private var activeSuggestion = 0
+    @State private var mentionToken = ""
+    @State private var fileSearchTask: Task<Void, Never>?
+
     private var session: OCSession? { store.selectedSession }
 
     var body: some View {
@@ -257,6 +263,9 @@ struct ChatPane: View {
         VStack(spacing: 0) {
             Divider().overlay(Theme.border)
             VStack(alignment: .leading, spacing: 10) {
+                if !suggestions.isEmpty {
+                    suggestionList
+                }
                 if !attachments.isEmpty {
                     attachmentStrip
                 }
@@ -266,6 +275,12 @@ struct ChatPane: View {
                     .lineLimit(1...6)
                     .disabled(!canSend)
                     .focused($composerFocused)
+                    .onChange(of: app.composerDraft) { _, text in
+                        updateSuggestions(for: text)
+                    }
+                    .onChange(of: composerFocused) { _, focused in
+                        if !focused { clearSuggestions() }
+                    }
                 HStack(spacing: 14) {
                     PhotosPicker(selection: $photoItems, maxSelectionCount: 4, matching: .images) {
                         Image(systemName: "photo")
@@ -327,6 +342,152 @@ struct ChatPane: View {
         }
     }
 
+    // MARK: Autocomplete
+
+    private var suggestionList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, item in
+                Button {
+                    select(item)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 13))
+                            .foregroundStyle(item.tint)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.title)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Theme.textPrimary)
+                                .lineLimit(1)
+                            if let subtitle = item.subtitle, !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.textTertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 4)
+                        Text(item.kindLabel)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(index == activeSuggestion ? Theme.panel : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bg))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
+        .frame(maxHeight: 240)
+    }
+
+    private func clearSuggestions() {
+        fileSearchTask?.cancel()
+        suggestions = []
+        activeSuggestion = 0
+        mentionToken = ""
+    }
+
+    /// Inspect the trailing token of the draft and surface `@` (files/agents) or
+    /// `/` (commands) suggestions. SwiftUI gives no cursor position, so we treat
+    /// the last whitespace-delimited token as the active one (cursor-at-end).
+    private func updateSuggestions(for text: String) {
+        guard canSend else { clearSuggestions(); return }
+        let token: Substring
+        let isFirstToken: Bool
+        if let space = text.lastIndex(where: { $0 == " " || $0 == "\n" }) {
+            token = text[text.index(after: space)...]
+            isFirstToken = false
+        } else {
+            token = text[...]
+            isFirstToken = true
+        }
+
+        if token.hasPrefix("/"), isFirstToken {
+            let query = String(token.dropFirst()).lowercased()
+            let matches = store.commands
+                .filter { query.isEmpty || $0.name.lowercased().contains(query) }
+                .prefix(8)
+                .map { ComposerSuggestion(kind: .command, value: $0.name,
+                                          title: "/\($0.name)", subtitle: $0.description) }
+            suggestions = Array(matches)
+            activeSuggestion = 0
+            mentionToken = ""
+        } else if token.hasPrefix("@") {
+            let query = String(token.dropFirst())
+            mentionToken = query
+            let agentMatches = store.selectableAgents
+                .filter { query.isEmpty || $0.name.lowercased().contains(query.lowercased()) }
+                .prefix(4)
+                .map { ComposerSuggestion(kind: .agent, value: $0.name,
+                                          title: "@\($0.name)", subtitle: $0.description) }
+            suggestions = Array(agentMatches)
+            activeSuggestion = 0
+            scheduleFileSuggestions(query: query, agents: Array(agentMatches))
+        } else {
+            clearSuggestions()
+        }
+    }
+
+    private func scheduleFileSuggestions(query: String, agents: [ComposerSuggestion]) {
+        fileSearchTask?.cancel()
+        guard !query.isEmpty else { return }
+        fileSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            let paths = await store.findFiles(query)
+            guard !Task.isCancelled, mentionToken == query else { return }
+            let fileMatches = paths.prefix(8).map { path in
+                ComposerSuggestion(kind: .file, value: path,
+                                   title: (path as NSString).lastPathComponent, subtitle: path)
+            }
+            suggestions = agents + fileMatches
+        }
+    }
+
+    private func select(_ item: ComposerSuggestion) {
+        let prefix = draftPrefixBeforeTrailingToken(app.composerDraft)
+        switch item.kind {
+        case .command:
+            app.composerDraft = "/\(item.value) "
+        case .agent:
+            store.selectAgent(item.value)
+            app.composerDraft = prefix
+        case .file:
+            let path = item.value
+            app.composerDraft = prefix
+            Task {
+                if let attachment = await store.fileMentionAttachment(path: path) {
+                    if !attachments.contains(where: { $0.filename == attachment.filename }) {
+                        attachments.append(attachment)
+                    }
+                } else {
+                    // Binary/unreadable: fall back to a plain-text path reference.
+                    app.composerDraft = prefix + "@\(path) "
+                }
+            }
+        }
+        clearSuggestions()
+        composerFocused = true
+    }
+
+    /// Everything in the draft up to and including the whitespace before the
+    /// trailing token (empty when the token is the whole draft).
+    private func draftPrefixBeforeTrailingToken(_ text: String) -> String {
+        if let space = text.lastIndex(where: { $0 == " " || $0 == "\n" }) {
+            return String(text[...space])
+        }
+        return ""
+    }
+
     private var canSend: Bool {
         store.status.isConnected && store.selectedSessionID != nil
     }
@@ -339,9 +500,16 @@ struct ChatPane: View {
         let text = app.composerDraft
         let toSend = attachments
         guard canSubmit else { return }
+        clearSuggestions()
         app.composerDraft = ""
         attachments = []
-        Task { await store.sendPrompt(text, attachments: toSend) }
+        // Route a bare `/command` invocation to the command endpoint; otherwise
+        // send a normal prompt.
+        if toSend.isEmpty, let cmd = store.parseCommand(text) {
+            Task { await store.runCommand(cmd.name, arguments: cmd.arguments) }
+        } else {
+            Task { await store.sendPrompt(text, attachments: toSend) }
+        }
     }
 
     // MARK: Attachment loading
@@ -428,6 +596,38 @@ private struct BottomOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+/// A composer autocomplete suggestion (`@` file/agent or `/` command).
+struct ComposerSuggestion: Identifiable {
+    enum Kind { case file, agent, command }
+    let kind: Kind
+    let value: String
+    let title: String
+    var subtitle: String?
+    var id: String { "\(kindLabel):\(value)" }
+
+    var icon: String {
+        switch kind {
+        case .file:    return "doc.text"
+        case .agent:   return "person.fill"
+        case .command: return "terminal"
+        }
+    }
+    var tint: Color {
+        switch kind {
+        case .file:    return Theme.textSecondary
+        case .agent:   return Theme.accent
+        case .command: return Theme.added
+        }
+    }
+    var kindLabel: String {
+        switch kind {
+        case .file:    return "file"
+        case .agent:   return "agent"
+        case .command: return "command"
+        }
     }
 }
 

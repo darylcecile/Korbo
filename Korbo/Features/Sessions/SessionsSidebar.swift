@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SessionsSidebar: View {
     @EnvironmentObject private var app: AppModel
@@ -9,6 +10,7 @@ struct SessionsSidebar: View {
     @State private var renameTarget: OCSession?
     @State private var renameText: String = ""
     @State private var deleteTarget: OCSession?
+    @State private var shareURL: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -46,6 +48,19 @@ struct SessionsSidebar: View {
         } message: {
             Text(deleteTarget?.title ?? "This session will be permanently removed.")
         }
+        .alert("Share link", isPresented: shareBinding) {
+            Button("Copy link") {
+                if let url = shareURL { UIPasteboard.general.string = url }
+                shareURL = nil
+            }
+            Button("Done", role: .cancel) { shareURL = nil }
+        } message: {
+            Text(shareURL ?? "")
+        }
+    }
+
+    private var shareBinding: Binding<Bool> {
+        Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })
     }
 
     private var renameBinding: Binding<Bool> {
@@ -87,11 +102,40 @@ struct SessionsSidebar: View {
             .buttonStyle(.plain)
             .foregroundStyle(showSearch ? Theme.accent : Theme.textSecondary)
             .disabled(!store.status.isConnected)
+            groupSortMenu
         }
         .font(.system(size: 15, weight: .medium))
         .foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    private var groupSortMenu: some View {
+        Menu {
+            Section("Group by") {
+                ForEach(SessionGrouping.allCases) { g in
+                    Button {
+                        store.setSessionGrouping(g)
+                    } label: {
+                        Label(g.title, systemImage: store.sessionGrouping == g ? "checkmark" : g.icon)
+                    }
+                }
+            }
+            Section("Sort") {
+                ForEach(SessionSort.allCases) { s in
+                    Button {
+                        store.setSessionSort(s)
+                    } label: {
+                        Label(s.title, systemImage: store.sessionSort == s ? "checkmark" : s.icon)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(store.sessionGrouping == .project ? Theme.accent : Theme.textSecondary)
+        .disabled(!store.status.isConnected)
     }
 
     private var searchField: some View {
@@ -154,6 +198,7 @@ struct SessionsSidebar: View {
                         if !collapsed.contains(group.id) {
                             ForEach(group.sessions) { session in
                                 sessionRow(session)
+                                    .id("\(session.id)|\(session.isShared)|\(session.isArchived)|\(store.isPinned(session.id))")
                             }
                         }
                     }
@@ -186,6 +231,11 @@ struct SessionsSidebar: View {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(Theme.textTertiary)
+                    }
+                    if session.isShared {
+                        Image(systemName: "link")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.accent)
                     }
                     Spacer(minLength: 8)
                     Text(RelativeTime.short(session.lastActivity))
@@ -240,6 +290,23 @@ struct SessionsSidebar: View {
         } label: {
             Label(store.isPinned(session.id) ? "Unpin" : "Pin",
                   systemImage: store.isPinned(session.id) ? "pin.slash" : "pin")
+        }
+
+        Button {
+            Task { await store.forkSession(session.id) }
+        } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+
+        if session.isShared {
+            Button {
+                if let url = session.shareURL { UIPasteboard.general.string = url; shareURL = url }
+            } label: { Label("Copy share link", systemImage: "link") }
+            Button {
+                Task { await store.unshareSession(session.id) }
+            } label: { Label("Stop sharing", systemImage: "person.crop.circle.badge.xmark") }
+        } else {
+            Button {
+                Task { shareURL = await store.shareSession(session.id) }
+            } label: { Label("Share link", systemImage: "square.and.arrow.up") }
         }
 
         Button {

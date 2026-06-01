@@ -40,11 +40,11 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 Context menu: rename
 - [x] P0 Context menu: delete (confirm)
 - [x] P0 Context menu: archive/unarchive
-- [ ] P1 Context menu: fork/duplicate
-- [ ] P1 Context menu: share (link) / unshare *(API: `/session/{id}/share` exists — deferrable)*
+- [x] P1 Context menu: fork/duplicate — `forkSession` (POST `/session` w/ `parentID`), "Duplicate" context item; verified on device
+- [x] P1 Context menu: share (link) / unshare — `shareSession`/`unshareSession`, "Share"/"Copy link"/"Stop sharing" context items; verified on device
 - [x] P1 Context menu: pin/unpin — client-local `pinnedSessionIDs` (UserDefaults), `.pinned` bucket renders a "Pinned" group first, pin glyph on rows
 - [ ] P2 Multi‑select + bulk actions (archive/delete/pin)
-- [ ] P2 Drag‑reorder / sort options
+- [x] P2 Sort options + project grouping — `SessionGrouping` (recency/project) + `SessionSort` (updated/created/title) menu, persisted; verified on device
 
 ## 3. Conversation view (center)
 - [ ] P0 Message list, user vs assistant distinction
@@ -80,9 +80,9 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 Multiline auto‑growing input
 - [ ] P0 Placeholder "@ for files/agents; / for commands; ! for shell"
 - [x] P0 Send (⌘↵) and Stop states — composer send button bound to ⌘↵; Stop (⌘.) aborts while generating
-- [ ] P0 `@` mention autocomplete: files
-- [ ] P1 `@` mention autocomplete: agents
-- [ ] P1 `/` command/skill autocomplete
+- [x] P0 `@` mention autocomplete: files — debounced fuzzy file search → attachment chip on select; verified on device
+- [x] P1 `@` mention autocomplete: agents — `selectableAgents` (`@build`/`@plan`); verified on device
+- [x] P1 `/` command/skill autocomplete — first-token `/` filters `store.commands`, inserts `/name `; verified on device
 - [ ] P1 `!` shell prefix routing
 - [x] P0 Attach file (document picker)
 - [x] P0 Attach image (photo picker) + preview
