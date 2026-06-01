@@ -47,6 +47,7 @@ struct TerminalPane: View {
                         .foregroundStyle(Theme.removed)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close terminal")
             }
             Divider().frame(height: 18).overlay(Theme.border)
             Button { app.showRightSidebar.toggle() } label: {
@@ -54,6 +55,7 @@ struct TerminalPane: View {
                     .foregroundStyle(app.showRightSidebar ? Theme.accent : Theme.textSecondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Toggle context sidebar")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -64,6 +66,7 @@ struct TerminalPane: View {
         return Button { store.activePtyID = pty.id } label: {
             HStack(spacing: 5) {
                 Image(systemName: "terminal").font(.system(size: 10))
+                    .accessibilityHidden(true)
                 Text(tabTitle(pty)).font(.system(size: 12, weight: .medium)).lineLimit(1)
             }
             .foregroundStyle(active ? Theme.textPrimary : Theme.textTertiary)
@@ -86,6 +89,7 @@ struct TerminalPane: View {
                 Image(systemName: "plus").font(.system(size: 14)).foregroundStyle(Theme.accent)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("New terminal")
         } else {
             Menu {
                 Button("Default shell") { Task { await store.newPty() } }
@@ -96,6 +100,7 @@ struct TerminalPane: View {
             } label: {
                 Image(systemName: "plus").font(.system(size: 14)).foregroundStyle(Theme.accent)
             }
+            .accessibilityLabel("New terminal")
         }
     }
 

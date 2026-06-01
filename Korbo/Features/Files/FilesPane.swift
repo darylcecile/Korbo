@@ -45,6 +45,7 @@ struct FilesPane: View {
                         .foregroundStyle(Theme.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 10)
@@ -99,6 +100,7 @@ struct FilesPane: View {
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Theme.textTertiary)
                         .frame(width: 10)
+                        .accessibilityHidden(true)
                 } else {
                     Spacer().frame(width: 10)
                 }
@@ -106,6 +108,7 @@ struct FilesPane: View {
                     .font(.system(size: 12))
                     .foregroundStyle(node.isDirectory ? Theme.accent : Theme.textSecondary)
                     .frame(width: 16)
+                    .accessibilityHidden(true)
                 Text(node.name)
                     .font(.system(size: 13))
                     .foregroundStyle(node.ignored ? Theme.textTertiary : Theme.textPrimary)
@@ -162,6 +165,7 @@ struct FilesPane: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 16)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .font(.system(size: 13, weight: .medium))
@@ -302,6 +306,7 @@ struct FileViewer: View {
             }
             .buttonStyle(.plain)
             .help("Return to chat and show file browser")
+            .accessibilityLabel("Return to chat")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -343,6 +348,7 @@ struct FileViewer: View {
                     .foregroundStyle(Theme.textTertiary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close \(name)")
         }
         .padding(.leading, 10)
         .padding(.trailing, 8)
@@ -377,11 +383,14 @@ struct FileViewer: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Theme.textTertiary)
                 navButton("chevron.up") { step(-1) }
+                    .accessibilityLabel("Previous match")
                 navButton("chevron.down") { step(1) }
+                    .accessibilityLabel("Next match")
                 Button { findQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12)).foregroundStyle(Theme.textTertiary)
                 }.buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
             }
 
             Spacer(minLength: 8)

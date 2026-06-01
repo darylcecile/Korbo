@@ -25,6 +25,7 @@ struct GitPane: View {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
+                    .accessibilityHidden(true)
                 Text(store.vcsInfo?.branch ?? "—")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
@@ -46,6 +47,7 @@ struct GitPane: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isLoadingGit)
+                .accessibilityLabel("Refresh git status")
             }
 
             Picker("Diff", selection: Binding(
@@ -112,6 +114,7 @@ struct GitPane: View {
                 Image(systemName: "checkmark.circle")
                     .font(.system(size: 30))
                     .foregroundStyle(Theme.textTertiary)
+                    .accessibilityHidden(true)
                 Text(store.gitMode == .working ? "No working changes" : "No branch changes")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
@@ -148,6 +151,7 @@ struct GitPane: View {
         let (dir, name) = splitPath(file.file)
         return HStack(spacing: 8) {
             statusBadge(file.status)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .font(.system(size: 13, weight: .medium))
@@ -172,6 +176,7 @@ struct GitPane: View {
             Image(systemName: isOpen ? "chevron.down" : "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)
         }
         .font(.system(size: 12, weight: .medium))
         .padding(.horizontal, 16)

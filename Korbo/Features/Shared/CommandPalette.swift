@@ -73,6 +73,7 @@ struct CommandPalette: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 16)
@@ -128,6 +129,7 @@ struct CommandPalette: View {
                     .font(.system(size: 14))
                     .frame(width: 20)
                     .foregroundStyle(index == selection ? Theme.accent : Theme.textSecondary)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.title)
                         .font(.system(size: 14))

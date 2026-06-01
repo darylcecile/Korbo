@@ -105,12 +105,14 @@ struct SessionsSidebar: View {
                 } label: { Image(systemName: "square.and.pencil") }
                     .buttonStyle(.plain)
                     .disabled(!store.status.isConnected)
+                    .accessibilityLabel("New session")
                 Spacer()
                 Button {
                     Task { await store.reloadSessions() }
                 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain)
                     .disabled(!store.status.isConnected)
+                    .accessibilityLabel("Refresh sessions")
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { app.toggleTerminal() }
                 } label: {
@@ -119,6 +121,7 @@ struct SessionsSidebar: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(app.showTerminal ? Theme.accent : Theme.textSecondary)
                 .disabled(!store.status.isConnected)
+                .accessibilityLabel("Toggle terminal")
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { showSearch.toggle() }
                     if !showSearch { store.sessionQuery = "" }
@@ -128,6 +131,7 @@ struct SessionsSidebar: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(showSearch ? Theme.accent : Theme.textSecondary)
                 .disabled(!store.status.isConnected)
+                .accessibilityLabel("Search sessions")
                 groupSortMenu
             }
         }
@@ -163,6 +167,7 @@ struct SessionsSidebar: View {
         .buttonStyle(.plain)
         .foregroundStyle(store.sessionGrouping == .project ? Theme.accent : Theme.textSecondary)
         .disabled(!store.status.isConnected)
+        .accessibilityLabel("Filter and sort sessions")
     }
 
     private var searchField: some View {
@@ -182,6 +187,7 @@ struct SessionsSidebar: View {
                         .foregroundStyle(Theme.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 10)
@@ -255,11 +261,13 @@ struct SessionsSidebar: View {
                     Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 20))
                         .foregroundStyle(isChecked ? Theme.accent : Theme.textTertiary)
+                        .accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         if active {
                             Circle().fill(Theme.accent).frame(width: 6, height: 6)
+                                .accessibilityHidden(true)
                         }
                         Text(session.title ?? "Untitled session")
                             .font(.system(size: 13, weight: selected ? .semibold : .regular))
@@ -269,11 +277,13 @@ struct SessionsSidebar: View {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: 9))
                                 .foregroundStyle(Theme.textTertiary)
+                                .accessibilityHidden(true)
                         }
                         if session.isShared {
                             Image(systemName: "link")
                                 .font(.system(size: 9))
                                 .foregroundStyle(Theme.accent)
+                                .accessibilityHidden(true)
                         }
                         Spacer(minLength: 8)
                         Text(RelativeTime.short(session.lastActivity))
@@ -305,6 +315,7 @@ struct SessionsSidebar: View {
                 if let project {
                     HStack(spacing: 3) {
                         Image(systemName: "folder").font(.system(size: 9))
+                            .accessibilityHidden(true)
                         Text(project).lineLimit(1)
                     }
                     .foregroundStyle(Theme.textTertiary)
@@ -492,6 +503,7 @@ struct SessionsSidebar: View {
             HStack(spacing: 6) {
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: 9, weight: .bold))
+                    .accessibilityHidden(true)
                 Text(group.title)
                 Text("\(group.sessions.count)")
                     .foregroundStyle(Theme.textTertiary.opacity(0.7))
@@ -505,6 +517,7 @@ struct SessionsSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(group.title), \(group.sessions.count) sessions, \(isCollapsed ? "collapsed" : "expanded")")
     }
 
     // MARK: - Multi-Select Helpers

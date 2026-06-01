@@ -65,6 +65,7 @@ struct ChatPane: View {
                     Image(systemName: "sidebar.left")
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Toggle sessions sidebar")
             }
 
             contextRing
@@ -107,6 +108,7 @@ struct ChatPane: View {
                 Image(systemName: "sidebar.right")
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Toggle context sidebar")
         }
         .font(.system(size: 14))
         .foregroundStyle(Theme.textSecondary)
@@ -170,8 +172,10 @@ struct ChatPane: View {
     private func chip(icon: String, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon).font(.system(size: 12))
+                .accessibilityHidden(true)
             Text(text).font(.system(size: 13)).lineLimit(1)
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                .accessibilityHidden(true)
         }
         .foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 10).padding(.vertical, 7)
@@ -532,6 +536,7 @@ struct ChatPane: View {
                             Image(systemName: "stop.fill").foregroundStyle(Theme.removed)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Stop generation")
                     } else {
                         Button { send() } label: {
                             Image(systemName: "paperplane.fill")
@@ -540,6 +545,7 @@ struct ChatPane: View {
                         .buttonStyle(.plain)
                         .disabled(!canSubmit)
                         .keyboardShortcut(.return, modifiers: .command)
+                        .accessibilityLabel("Send message")
                     }
                 }
                 .font(.system(size: 13))
@@ -958,6 +964,7 @@ private struct AttachmentChip: View {
                     .foregroundStyle(Theme.textTertiary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(attachment.filename)")
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
@@ -1323,6 +1330,7 @@ private struct ExpandedComposerSheet: View {
                             .foregroundStyle(canSubmit ? Theme.accent : Theme.textTertiary)
                     }
                     .disabled(!canSubmit)
+                    .accessibilityLabel("Send message")
                 }
             }
             .toolbarBackground(Theme.panelRaised, for: .navigationBar)

@@ -41,6 +41,7 @@ struct SnippetsSheet: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add snippet")
                 }
             }
             .sheet(item: $editingSnippet) { snippet in
@@ -113,6 +114,7 @@ struct SnippetsSheet: View {
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
+            .accessibilityLabel("Snippet options")
         }
         .padding(12)
         .background(

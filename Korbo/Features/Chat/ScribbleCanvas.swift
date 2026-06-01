@@ -86,6 +86,8 @@ struct ScribbleSheet: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tool == .pen ? "Pen tool" : "Eraser tool")
+                .accessibilityAddTraits(selectedTool == tool ? [.isSelected] : [])
             }
             Spacer()
             Button {
@@ -96,6 +98,7 @@ struct ScribbleSheet: View {
                     .foregroundStyle(Theme.textSecondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Clear canvas")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

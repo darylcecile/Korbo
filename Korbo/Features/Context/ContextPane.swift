@@ -31,6 +31,7 @@ struct ContextPane: View {
                 Button { app.rightTab = tab } label: {
                     HStack(spacing: 6) {
                         Image(systemName: tab.systemImage).font(.system(size: 12))
+                            .accessibilityHidden(true)
                         Text(tab.title).font(.system(size: 13, weight: .medium))
                     }
                     .foregroundStyle(app.rightTab == tab ? Theme.textPrimary : Theme.textTertiary)
@@ -206,6 +207,7 @@ struct ContextPane: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.removed)
+                            .accessibilityHidden(true)
                     }
                     Text("\(Int((fraction * 100).rounded()))% of context window")
                         .font(.system(size: 11))
@@ -218,6 +220,7 @@ struct ContextPane: View {
                 ForEach(segs) { seg in
                     HStack(spacing: 8) {
                         Circle().fill(seg.color).frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
                         Text(seg.label)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.textSecondary)
@@ -293,6 +296,7 @@ private struct ContextTodoRow: View {
             Image(systemName: glyph)
                 .font(.system(size: 12))
                 .foregroundStyle(glyphColor)
+                .accessibilityHidden(true)
 
             Text(content)
                 .font(.system(size: 12))

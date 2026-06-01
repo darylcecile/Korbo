@@ -73,6 +73,7 @@ struct MessageView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkle").foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
                 if let model = item.info.modelLabel {
                     Text(model).font(.system(size: 13, weight: .semibold))
                 }
@@ -172,6 +173,7 @@ struct MessageView: View {
                         .foregroundStyle(showCopyConfirm ? Theme.accent : Theme.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Copy message")
                 Button {
                     speech.toggleSpeak(messageID: item.info.id, text: visibleTextContent)
                 } label: {
@@ -183,6 +185,7 @@ struct MessageView: View {
                                          : Theme.textTertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(speech.speakingMessageID == item.info.id ? "Stop speaking" : "Speak message")
             }
         }
         .font(.system(size: 11))
@@ -227,11 +230,13 @@ private struct ReasoningView: View {
                 HStack(spacing: 6) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .bold))
+                        .accessibilityHidden(true)
                     Text("Reasoning").font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(Theme.textTertiary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Reasoning, \(expanded ? "expanded" : "collapsed")")
             if expanded {
                 Text(text)
                     .font(.system(size: 13))

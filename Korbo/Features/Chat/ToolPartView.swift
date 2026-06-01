@@ -40,10 +40,12 @@ struct ToolPartView: View {
     private var header: some View {
         HStack(spacing: 8) {
             statusIcon
+                .accessibilityHidden(true)
             Image(systemName: descriptor.icon)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.accent)
                 .frame(width: 16)
+                .accessibilityHidden(true)
             Text(descriptor.name)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
@@ -66,6 +68,7 @@ struct ToolPartView: View {
             Image(systemName: expanded ? "chevron.down" : "chevron.right")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)
         }
     }
 
@@ -240,6 +243,7 @@ struct ToolPartView: View {
     private func tag(_ text: String, icon: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon).font(.system(size: 9))
+                .accessibilityHidden(true)
             Text(text).font(.system(size: 10.5, weight: .medium))
         }
         .foregroundStyle(Theme.accent)
@@ -422,6 +426,7 @@ private struct ToolTodoRow: View {
             Image(systemName: glyph)
                 .font(.system(size: 12))
                 .foregroundStyle(glyphColor)
+                .accessibilityHidden(true)
             Text(content)
                 .font(.system(size: 12))
                 .foregroundStyle(isDone ? Theme.textTertiary : Theme.textPrimary)
@@ -467,12 +472,14 @@ private struct DisclosureText: View {
                 HStack(spacing: 4) {
                     Image(systemName: open ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .bold))
+                        .accessibilityHidden(true)
                     Text(label)
                         .font(.system(size: 11, weight: .semibold))
                 }
                 .foregroundStyle(Theme.textTertiary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(label), \(open ? "expanded" : "collapsed")")
             if open {
                 Text(text)
                     .font(.system(size: 11.5, design: .monospaced))

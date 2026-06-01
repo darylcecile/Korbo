@@ -70,6 +70,7 @@ struct SettingsView: View {
         Section("Connection") {
             HStack(spacing: 10) {
                 Circle().fill(statusColor).frame(width: 9, height: 9)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(store.servers.selectedServer?.name ?? "No server")
                     Text(store.servers.selectedServer?.normalizedURLString ?? store.status.label)
@@ -111,6 +112,7 @@ struct SettingsView: View {
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 11, weight: .bold))
                                         .foregroundStyle(.white)
+                                        .accessibilityHidden(true)
                                 }
                             }
                             .frame(width: 36, height: 36)
@@ -195,6 +197,7 @@ struct SettingsView: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .disabled(!store.status.isConnected)
+                .accessibilityLabel("Refresh providers")
             }
         } footer: {
             Text("API keys are sent to the opencode server, which stores them. Providers configured via environment variables or the server config file appear here too.")
@@ -206,6 +209,7 @@ struct SettingsView: View {
             Circle()
                 .fill(connected ? Theme.added : Theme.textTertiary)
                 .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(provider.name ?? provider.id)
                 Text(modelCountLabel(provider) + (connected ? " · Connected" : ""))
@@ -231,6 +235,7 @@ struct SettingsView: View {
                 Image(systemName: "ellipsis.circle").foregroundStyle(Theme.textSecondary)
             }
             .disabled(!store.status.isConnected || store.isUpdatingAuth)
+            .accessibilityLabel("Provider options")
         }
     }
 
