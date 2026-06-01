@@ -139,15 +139,6 @@ struct SessionsSidebar: View {
                 .foregroundStyle(showSearch ? Theme.accent : Theme.textSecondary)
                 .disabled(!store.status.isConnected)
                 groupSortMenu
-                // Select mode toggle
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { isSelectMode = true }
-                } label: {
-                    Image(systemName: "checkmark.circle")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.textSecondary)
-                .disabled(!store.status.isConnected || store.sessions.isEmpty)
             }
         }
         .font(.system(size: 15, weight: .medium))
@@ -338,6 +329,15 @@ struct SessionsSidebar: View {
 
     @ViewBuilder
     private func rowMenu(_ session: OCSession) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isSelectMode = true
+                selectedIDs = [session.id]
+            }
+        } label: { Label("Select", systemImage: "checkmark.circle") }
+
+        Divider()
+
         Button {
             renameText = session.title ?? ""
             renameTarget = session
