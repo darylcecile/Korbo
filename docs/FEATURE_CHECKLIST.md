@@ -138,7 +138,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P2 Syntax highlighting — dependency-free lexer (`SyntaxHighlighter.swift`), selectable palette (Dark+/Dracula/Solarized/Nord via AppearanceStore.codeTheme), per-extension language detection
 - [x] P2 Multiple open files (tabs) — `OpenFile` tab model, tab strip with per-tab close (unsaved markers N/A: viewer is read-only)
 - [x] P2 Find & go‑to‑line — find bar (count, prev/next nav, highlight), go-to-line jump (replace N/A: read-only viewer)
-- [ ] P2 Minimap / code folding
+- [x] P2 Code folding — indentation-derived fold regions in the file viewer: per-region chevron in the gutter collapses a block to a `⋯ N lines` summary, a toolbar collapse/expand-all button toggles every region, and find / go-to-line auto-reveals any target hidden inside a collapsed region; pure client (language-agnostic, tabs counted as 4 cols); verified on device (collapsed `final class AppModel` body in AppModel.swift). Minimap still pending
 
 ## 7. Context tab (right)
 - [x] P1 Context items list (files/attachments/agents/skills) w/ token counts — Context tab "Context files" panel lists files/attachments referenced in the conversation (deduped from `file` parts via `store.contextFiles`) with a mime-aware glyph; opencode exposes only aggregate context tokens (shown in the usage bar), not per-item counts, so per-file token counts are intentionally omitted; verified on device

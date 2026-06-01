@@ -273,6 +273,12 @@ struct FileViewer: View {
     @State private var gotoText = ""
     @FocusState private var findFocused: Bool
 
+    // Code folding (display-only). `foldRanges` maps a foldable start line to the
+    // last line of its (indentation-defined) region; `collapsed` holds the start
+    // lines the user has collapsed. Both are reset when the active file changes.
+    @State private var foldRanges: [Int: Int] = [:]
+    @State private var collapsed: Set<Int> = []
+
     private var activeKey: String {
         let f = store.activeFile
         return (f?.path ?? "") + "#" + String(f?.content?.content?.count ?? -1)
@@ -286,7 +292,7 @@ struct FileViewer: View {
             Divider().overlay(Theme.border)
             content
         }
-        .onChange(of: store.activeFilePath) { _ in resetFind(); refreshHighlight() }
+        .onChange(of: store.activeFilePath) { _ in resetFind(); collapsed = []; refreshHighlight() }
         .onChange(of: activeKey) { _ in refreshHighlight() }
         .onChange(of: findQuery) { _ in recomputeMatches() }
         .onChange(of: store.openFiles.isEmpty) { empty in
@@ -408,6 +414,20 @@ struct FileViewer: View {
                 Text("Go").font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.accent)
             }.buttonStyle(.plain)
+
+            if !foldRanges.isEmpty {
+                Divider().frame(height: 16).overlay(Theme.border)
+                Button { toggleAllFolds() } label: {
+                    Image(systemName: collapsed.isEmpty
+                          ? "arrow.down.right.and.arrow.up.left"
+                          : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(collapsed.isEmpty ? "Collapse all" : "Expand all")
+                .accessibilityLabel(collapsed.isEmpty ? "Collapse all" : "Expand all")
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 38)
@@ -449,11 +469,12 @@ struct FileViewer: View {
     private var codeView: some View {
         let gutter = max(2, String(lines.count).count)
         let gutterWidth = CGFloat(gutter) * 7.4 + 4
+        let visible = visibleIndices()
         return ScrollViewReader { proxy in
             ScrollView([.vertical, .horizontal]) {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { idx, runs in
-                        lineRow(idx: idx, runs: runs, gutterWidth: gutterWidth)
+                    ForEach(visible, id: \.self) { idx in
+                        lineRow(idx: idx, runs: lines[idx], gutterWidth: gutterWidth)
                             .id(idx)
                     }
                     if truncated {
@@ -477,17 +498,48 @@ struct FileViewer: View {
     @State private var scrollRequest: Int? = nil
 
     private func lineRow(idx: Int, runs: [CodeRun], gutterWidth: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        let foldEnd = foldRanges[idx]
+        let isCollapsed = collapsed.contains(idx)
+        return HStack(alignment: .top, spacing: 6) {
+            foldControl(idx: idx, foldEnd: foldEnd, isCollapsed: isCollapsed)
             Text(String(idx + 1))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Theme.textTertiary)
                 .frame(width: gutterWidth, alignment: .trailing)
-            Text(attributed(idx: idx, runs: runs))
-                .font(.system(size: 12, design: .monospaced))
-                .fixedSize(horizontal: true, vertical: false)
+            HStack(alignment: .top, spacing: 8) {
+                Text(attributed(idx: idx, runs: runs))
+                    .font(.system(size: 12, design: .monospaced))
+                    .fixedSize(horizontal: true, vertical: false)
+                if isCollapsed, let end = foldEnd {
+                    Text("⋯ \(end - idx) lines")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Theme.panelRaised))
+                        .onTapGesture { toggleFold(idx) }
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 1)
+    }
+
+    @ViewBuilder
+    private func foldControl(idx: Int, foldEnd: Int?, isCollapsed: Bool) -> some View {
+        if foldEnd != nil {
+            Button { toggleFold(idx) } label: {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 12, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isCollapsed ? "Expand region" : "Collapse region")
+        } else {
+            Color.clear.frame(width: 12, height: 14)
+        }
     }
 
     /// Build the coloured line, then overlay find-match backgrounds.
@@ -536,7 +588,8 @@ struct FileViewer: View {
     private func refreshHighlight() {
         guard let file = store.activeFile, let content = file.content, !content.isBinary,
               let text = content.content else {
-            lines = []; truncated = false; renderedKey = activeKey; return
+            lines = []; truncated = false; renderedKey = activeKey
+            foldRanges = [:]; collapsed = []; return
         }
         if renderedKey == activeKey && !lines.isEmpty { return }
         let lang = SyntaxHighlighter.language(forPath: file.path)
@@ -545,7 +598,92 @@ struct FileViewer: View {
         if truncated { tokenised = Array(tokenised.prefix(Self.maxLines)) }
         lines = tokenised
         renderedKey = activeKey
+        foldRanges = Self.computeFoldRanges(tokenised)
+        collapsed = collapsed.filter { foldRanges[$0] != nil }
         recomputeMatches()
+    }
+
+    // MARK: Folding
+
+    /// Derive collapsible regions purely from indentation: a line whose first
+    /// non-blank successor is more deeply indented opens a region that runs until
+    /// indentation returns to the opener's level (or shallower). Blank lines are
+    /// transparent. This is language-agnostic and reuses the highlighted runs.
+    private static func computeFoldRanges(_ lines: [[CodeRun]]) -> [Int: Int] {
+        let texts = lines.map { $0.map(\.text).joined() }
+        func indent(_ s: String) -> Int? {
+            var c = 0
+            for ch in s {
+                if ch == " " { c += 1 }
+                else if ch == "\t" { c += 4 }
+                else { return c }
+            }
+            return nil   // blank / whitespace-only line
+        }
+        let levels = texts.map(indent)
+        var folds: [Int: Int] = [:]
+        let n = levels.count
+        for i in 0..<n {
+            guard let ind = levels[i] else { continue }
+            var j = i + 1
+            while j < n && levels[j] == nil { j += 1 }
+            guard j < n, let next = levels[j], next > ind else { continue }
+            var end = i
+            var k = i + 1
+            while k < n {
+                if let lvl = levels[k] {
+                    if lvl > ind { end = k } else { break }
+                }
+                k += 1
+            }
+            if end > i { folds[i] = end }
+        }
+        return folds
+    }
+
+    /// Line indices to render, skipping the bodies of collapsed regions. Jumping
+    /// past a collapsed region's end naturally hides nested children too.
+    private func visibleIndices() -> [Int] {
+        var result: [Int] = []
+        var i = 0
+        let n = lines.count
+        while i < n {
+            result.append(i)
+            if collapsed.contains(i), let end = foldRanges[i] {
+                i = end + 1
+            } else {
+                i += 1
+            }
+        }
+        return result
+    }
+
+    private func toggleFold(_ idx: Int) {
+        guard foldRanges[idx] != nil else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            if collapsed.contains(idx) { collapsed.remove(idx) }
+            else { collapsed.insert(idx) }
+        }
+    }
+
+    private func toggleAllFolds() {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            if collapsed.isEmpty {
+                collapsed = Set(foldRanges.keys)
+            } else {
+                collapsed = []
+            }
+        }
+    }
+
+    /// Expand any collapsed region that hides `idx` so it can be scrolled into view.
+    private func reveal(_ idx: Int) {
+        let hiding = collapsed.filter { start in
+            guard let end = foldRanges[start] else { return false }
+            return start < idx && idx <= end
+        }
+        guard !hiding.isEmpty else { return }
+        collapsed.subtract(hiding)
     }
 
     private func recomputeMatches() {
@@ -565,7 +703,7 @@ struct FileViewer: View {
         }
         matches = result
         current = result.isEmpty ? 0 : min(current, result.count - 1)
-        if !result.isEmpty { scrollRequest = result[current].line }
+        if !result.isEmpty { reveal(result[current].line); scrollRequest = result[current].line }
     }
 
     private func step(_ delta: Int) {
@@ -575,6 +713,7 @@ struct FileViewer: View {
 
     private func scrollToCurrent(_ proxy: ScrollViewProxy) {
         guard matches.indices.contains(current) else { return }
+        reveal(matches[current].line)
         withAnimation(.easeInOut(duration: 0.2)) {
             proxy.scrollTo(matches[current].line, anchor: .center)
         }
@@ -583,6 +722,7 @@ struct FileViewer: View {
     private func gotoLine() {
         guard let n = Int(gotoText.trimmingCharacters(in: .whitespaces)), !lines.isEmpty else { return }
         let target = min(max(1, n), lines.count) - 1
+        reveal(target)
         scrollRequest = nil           // ensure onChange fires even for same value
         DispatchQueue.main.async { scrollRequest = target }
     }
