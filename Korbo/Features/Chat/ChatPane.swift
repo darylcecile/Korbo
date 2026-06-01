@@ -369,6 +369,7 @@ struct ChatPane: View {
                     .menuIndicator(.hidden)
                     .disabled(!canSend)
                     .accessibilityLabel("Add attachment")
+                    .padding(.leading, -4)
 
                     Button { isExpandedComposer = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
