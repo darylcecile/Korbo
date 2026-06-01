@@ -72,7 +72,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Inline **question** card (reply / reject)
 - [ ] P0 Empty state
 - [x] P0 Error state (+ retry) — connection-failure banner with `lastError` + Retry (see Connection-status banner)
-- [x] P1 Pending‑changes bar (unstaged git) — compact capsule above the composer showing working-tree change count + ±totals from `/vcs`, taps through to the git panel; verified on device
+- [ ] P1 Pending‑changes bar (unstaged git) — intentionally dropped (redundant with the git panel)
 - [x] P1 Auto‑scroll w/ "scroll to bottom" affordance
 - [ ] P2 Inline code comments / drafts
 

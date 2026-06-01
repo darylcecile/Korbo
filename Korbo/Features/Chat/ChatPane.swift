@@ -310,52 +310,8 @@ struct ChatPane: View {
         }
     }
 
-    /// Compact bar above the composer summarising uncommitted working-tree
-    /// changes. Tapping opens the git panel. Hidden when the tree is clean or the
-    /// git panel is showing a branch diff (so the counts stay truthful).
-    @ViewBuilder
-    private var pendingChangesBar: some View {
-        if store.gitMode == .working, !store.gitFiles.isEmpty {
-            let files = store.gitFiles
-            let adds = files.reduce(0) { $0 + $1.additions }
-            let dels = files.reduce(0) { $0 + $1.deletions }
-            Button {
-                app.showRightTab(.git)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                    Text("\(files.count) change\(files.count == 1 ? "" : "s")")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
-                    if adds > 0 {
-                        Text("+\(adds)").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.added)
-                    }
-                    if dels > 0 {
-                        Text("-\(dels)").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.removed)
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .background(.ultraThinMaterial)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(Theme.border.opacity(0.5), lineWidth: 0.5))
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-    }
-
     private var composer: some View {
         VStack(spacing: 0) {
-            pendingChangesBar
             VStack(alignment: .leading, spacing: 10) {
                 if !suggestions.isEmpty {
                     suggestionList
