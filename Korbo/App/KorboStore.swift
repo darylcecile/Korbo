@@ -121,6 +121,7 @@ final class KorboStore: ObservableObject {
     init(servers: ServerStore? = nil) {
         self.servers = servers ?? ServerStore()
         loadModelAgentPreferences()
+        loadPinnedSessions()
     }
 
     var selectedSession: OCSession? {
@@ -565,6 +566,27 @@ final class KorboStore: ObservableObject {
 
     // MARK: - Session management (rename / archive / delete / grouping)
 
+    /// User-pinned session IDs, persisted across launches. Pinned sessions are
+    /// surfaced in a dedicated group at the top of the sidebar.
+    @Published private(set) var pinnedSessionIDs: Set<String> = []
+
+    private static let pinnedKey = "korbo.pinnedSessions"
+
+    private func loadPinnedSessions() {
+        let stored = UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? []
+        pinnedSessionIDs = Set(stored)
+    }
+
+    func isPinned(_ id: String) -> Bool { pinnedSessionIDs.contains(id) }
+
+    /// Pin or unpin a session (client-local; opencode has no pin concept).
+    func setPinned(_ id: String, pinned: Bool) {
+        if pinned { pinnedSessionIDs.insert(id) } else { pinnedSessionIDs.remove(id) }
+        UserDefaults.standard.set(Array(pinnedSessionIDs), forKey: Self.pinnedKey)
+    }
+
+    func togglePin(_ id: String) { setPinned(id, pinned: !isPinned(id)) }
+
     /// Root sessions (sub-sessions/forks are hidden from the top list) matching
     /// the current `sessionQuery`, bucketed into recency groups plus Archived.
     var sessionGroups: [SessionGroup] {
@@ -588,6 +610,7 @@ final class KorboStore: ObservableObject {
 
     private func bucket(for session: OCSession) -> SessionBucket {
         if session.isArchived { return .archived }
+        if pinnedSessionIDs.contains(session.id) { return .pinned }
         guard let date = session.lastActivity else { return .older }
         let cal = Calendar.current
         if cal.isDateInToday(date) { return .today }
@@ -909,10 +932,11 @@ final class KorboStore: ObservableObject {
 
 /// Recency buckets for the sessions sidebar, in display order.
 enum SessionBucket: String, CaseIterable, Identifiable {
-    case today, yesterday, week, older, archived
+    case pinned, today, yesterday, week, older, archived
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .pinned:    return "Pinned"
         case .today:     return "Today"
         case .yesterday: return "Yesterday"
         case .week:      return "Previous 7 days"

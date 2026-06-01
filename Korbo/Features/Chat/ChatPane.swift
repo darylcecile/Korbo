@@ -27,6 +27,12 @@ struct ChatPane: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
+            if app.layoutMode.isCompact {
+                Button { app.toggleSessionsDrawer() } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .buttonStyle(.plain)
+            }
             modelMenu
             agentMenu
 

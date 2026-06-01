@@ -64,8 +64,6 @@ struct SessionsSidebar: View {
             } label: { Image(systemName: "square.and.pencil") }
                 .buttonStyle(.plain)
                 .disabled(!store.status.isConnected)
-            Image(systemName: "bubble.left.and.bubble.right")
-            Image(systemName: "arrow.triangle.branch")
             Spacer()
             Button {
                 Task { await store.reloadSessions() }
@@ -76,7 +74,7 @@ struct SessionsSidebar: View {
                 withAnimation(.easeInOut(duration: 0.15)) { showSearch.toggle() }
                 if !showSearch { store.sessionQuery = "" }
             } label: {
-                Image(systemName: showSearch ? "magnifyingglass.circle.fill" : "magnifyingglass")
+                Image(systemName: "magnifyingglass")
             }
             .buttonStyle(.plain)
             .foregroundStyle(showSearch ? Theme.accent : Theme.textSecondary)
@@ -161,8 +159,10 @@ struct SessionsSidebar: View {
     private func sessionRow(_ session: OCSession) -> some View {
         let selected = store.selectedSessionID == session.id
         let active = store.activeSessionIDs.contains(session.id)
+        let pinned = store.isPinned(session.id)
         return Button {
             Task { await store.selectSession(session.id) }
+            if app.layoutMode.isCompact { app.sessionsDrawerOpen = false }
         } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -173,6 +173,11 @@ struct SessionsSidebar: View {
                         .font(.system(size: 13, weight: selected ? .semibold : .regular))
                         .lineLimit(1)
                         .foregroundStyle(selected ? Theme.accent : Theme.textPrimary)
+                    if pinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
                     Spacer(minLength: 8)
                     Text(RelativeTime.short(session.lastActivity))
                         .font(.system(size: 11))
@@ -220,6 +225,13 @@ struct SessionsSidebar: View {
             renameText = session.title ?? ""
             renameTarget = session
         } label: { Label("Rename", systemImage: "pencil") }
+
+        Button {
+            store.togglePin(session.id)
+        } label: {
+            Label(store.isPinned(session.id) ? "Unpin" : "Pin",
+                  systemImage: store.isPinned(session.id) ? "pin.slash" : "pin")
+        }
 
         Button {
             Task { await store.setSessionArchived(session.id, archived: !session.isArchived) }

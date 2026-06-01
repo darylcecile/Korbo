@@ -9,11 +9,11 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 ---
 
 ## 1. App shell & global layout
-- [ ] P0 Three‑pane layout: sessions · conversation · context
-- [ ] P0 Collapsible right sidebar (toggle)
+- [x] P0 Three‑pane layout: sessions · conversation · context — width-adaptive in `RootView` (GeometryReader → `AppModel.LayoutMode`)
+- [x] P0 Collapsible right sidebar (toggle) — `showRightSidebar`, header button + ⌘\
 - [ ] P1 Resizable panes (drag dividers) with min/max widths
-- [ ] P1 Auto‑collapse right/left at narrow widths (Split View / Stage Manager)
-- [ ] P0 Landscape‑first layout; portrait collapses to center + drawers
+- [x] P1 Auto‑collapse right/left at narrow widths (Split View / Stage Manager) — breakpoints compact<720 / medium / wide≥1080; side panes promoted to overlay drawers
+- [x] P0 Landscape‑first layout; portrait collapses to center + drawers — compact = chat only with sessions (left) + context (right) overlay drawers; medium = sessions inline + context drawer
 - [ ] P0 Top bar: model/agent selector, session title, project·branch·diff subtitle
 - [ ] P0 Top bar: context‑usage ring (%)
 - [ ] P1 Top bar: "open in editor" deep link (vscode://, etc.)
@@ -32,7 +32,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Grouping: by worktree/branch
 - [x] P0 Grouping: archived section
 - [x] P0 Item: title, project, +/− diff, relative time *(branch is workspace‑level in opencode, not per‑session — omitted)*
-- [~] P1 Item: streaming/active badge *(active dot done; pin/favourite deferred)*
+- [~] P1 Item: streaming/active badge *(active dot done; pin/favourite done — see pin/unpin)*
 - [x] P0 New session
 - [ ] P1 New worktree/branch session
 - [x] P0 Search/filter sessions
@@ -42,7 +42,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P0 Context menu: archive/unarchive
 - [ ] P1 Context menu: fork/duplicate
 - [ ] P1 Context menu: share (link) / unshare *(API: `/session/{id}/share` exists — deferrable)*
-- [ ] P1 Context menu: pin/unpin
+- [x] P1 Context menu: pin/unpin — client-local `pinnedSessionIDs` (UserDefaults), `.pinned` bucket renders a "Pinned" group first, pin glyph on rows
 - [ ] P2 Multi‑select + bulk actions (archive/delete/pin)
 - [ ] P2 Drag‑reorder / sort options
 
@@ -192,7 +192,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P0 iPad‑only target, landscape + portrait
 - [ ] P1 Local notifications (permission/question/idle/error)
 - [x] P1 Hardware keyboard shortcuts — global ⌘-shortcuts via `GlobalShortcuts` (palette, panel toggles, tab switches, new session, focus composer, settings, send)
-- [ ] P1 Split View / Stage Manager friendliness
+- [x] P1 Split View / Stage Manager friendliness — width-driven adaptive 3/2/1-pane shell with auto-collapsing side panels + overlay drawers
 - [ ] P1 Share sheet (share session/diff/output)
 - [ ] P2 App Intents / Shortcuts
 - [ ] P2 Handoff / Continuity

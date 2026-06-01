@@ -7,43 +7,98 @@ struct RootView: View {
     @EnvironmentObject private var store: KorboStore
 
     var body: some View {
-        HStack(spacing: 0) {
-            SessionsSidebar()
-                .frame(width: 300)
+        GeometryReader { geo in
+            let mode = app.layoutMode
+            ZStack {
+                baseLayout(mode)
+                drawerOverlays(mode, width: geo.size.width)
+                if app.showCommandPalette {
+                    CommandPalette()
+                        .transition(.opacity)
+                        .zIndex(10)
+                }
+            }
+            .background(Theme.bg)
+            .foregroundStyle(Theme.textPrimary)
+            .animation(.easeInOut(duration: 0.2), value: app.showRightSidebar)
+            .animation(.easeInOut(duration: 0.2), value: app.sessionsDrawerOpen)
+            .animation(.easeOut(duration: 0.15), value: app.showCommandPalette)
+            .background(GlobalShortcuts())
+            .onAppear { app.updateLayout(forWidth: geo.size.width) }
+            .onChange(of: geo.size.width) { width in app.updateLayout(forWidth: width) }
+            .sheet(isPresented: $app.showConnectionSheet) {
+                ConnectionSheet()
+                    .environmentObject(store)
+            }
+            .sheet(isPresented: $app.showSettingsSheet) {
+                SettingsView()
+                    .environmentObject(app)
+                    .environmentObject(store)
+            }
+        }
+    }
 
-            Divider().overlay(Theme.border)
+    /// Inline panes for the current width. Side panes that don't fit are promoted
+    /// to overlay drawers in `drawerOverlays`.
+    @ViewBuilder
+    private func baseLayout(_ mode: AppModel.LayoutMode) -> some View {
+        HStack(spacing: 0) {
+            if !mode.isCompact {
+                SessionsSidebar()
+                    .frame(width: mode.isWide ? 300 : 280)
+                Divider().overlay(Theme.border)
+            }
 
             ChatPane()
                 .frame(maxWidth: .infinity)
 
-            if app.showRightSidebar {
+            if mode.isWide && app.showRightSidebar {
                 Divider().overlay(Theme.border)
                 ContextPane()
                     .frame(width: 360)
                     .transition(.move(edge: .trailing))
             }
         }
-        .background(Theme.bg)
-        .foregroundStyle(Theme.textPrimary)
-        .animation(.easeInOut(duration: 0.2), value: app.showRightSidebar)
-        .background(GlobalShortcuts())
-        .overlay {
-            if app.showCommandPalette {
-                CommandPalette()
-                    .transition(.opacity)
-                    .zIndex(10)
+    }
+
+    /// Sessions (left) and context (right) drawers shown over the chat when the
+    /// window is too narrow to host them inline — the Split View / Stage Manager
+    /// path.
+    @ViewBuilder
+    private func drawerOverlays(_ mode: AppModel.LayoutMode, width: CGFloat) -> some View {
+        if mode.isCompact && app.sessionsDrawerOpen {
+            scrim { app.sessionsDrawerOpen = false }
+            HStack(spacing: 0) {
+                SessionsSidebar()
+                    .frame(width: min(320, width * 0.86))
+                    .background(Theme.panel)
+                Divider().overlay(Theme.border)
+                Spacer(minLength: 0)
             }
+            .transition(.move(edge: .leading))
+            .zIndex(6)
         }
-        .animation(.easeOut(duration: 0.15), value: app.showCommandPalette)
-        .sheet(isPresented: $app.showConnectionSheet) {
-            ConnectionSheet()
-                .environmentObject(store)
+
+        if !mode.isWide && app.showRightSidebar {
+            scrim { app.showRightSidebar = false }
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Divider().overlay(Theme.border)
+                ContextPane()
+                    .frame(width: min(380, width * 0.86))
+                    .background(Theme.panel)
+            }
+            .transition(.move(edge: .trailing))
+            .zIndex(6)
         }
-        .sheet(isPresented: $app.showSettingsSheet) {
-            SettingsView()
-                .environmentObject(app)
-                .environmentObject(store)
-        }
+    }
+
+    private func scrim(_ dismiss: @escaping () -> Void) -> some View {
+        Color.black.opacity(0.4)
+            .ignoresSafeArea()
+            .onTapGesture(perform: dismiss)
+            .transition(.opacity)
+            .zIndex(5)
     }
 }
 
