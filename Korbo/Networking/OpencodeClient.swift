@@ -278,6 +278,38 @@ actor OpencodeClient {
         _ = try await raw(.post, "/session/\(sessionID)/abort")
     }
 
+    /// `POST /session/{id}/summarize` — compact the conversation into a summary
+    /// to reclaim context window. Requires a model to perform the summarization.
+    /// Returns `true` when the server accepted the request.
+    @discardableResult
+    func summarize(sessionID: String, providerID: String, modelID: String, auto: Bool = false) async throws -> Bool {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "providerID": providerID, "modelID": modelID, "auto": auto
+        ])
+        let out: Bool = try await postJSON("/session/\(sessionID)/summarize", body: data)
+        return out
+    }
+
+    /// `POST /session/{id}/revert` — roll the session back to (and including)
+    /// `messageID`, hiding everything from that point. Reversible via `unrevert`.
+    /// Returns the updated session with its `revert` marker populated.
+    @discardableResult
+    func revert(sessionID: String, messageID: String, partID: String? = nil) async throws -> OCSession {
+        var dict: [String: Any] = ["messageID": messageID]
+        if let partID { dict["partID"] = partID }
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        return try await postJSON("/session/\(sessionID)/revert", body: data)
+    }
+
+    /// `POST /session/{id}/unrevert` — restore messages hidden by a prior
+    /// `revert`. Returns the updated session with its `revert` marker cleared.
+    @discardableResult
+    func unrevert(sessionID: String) async throws -> OCSession {
+        let (out, _) = try await raw(.post, "/session/\(sessionID)/unrevert")
+        do { return try decoder.decode(OCSession.self, from: out) }
+        catch { throw OpencodeError.decoding(error) }
+    }
+
     /// `POST /session/{id}/permissions/{permissionID}` — reply to a permission
     /// request raised by a tool (`once` / `always` / `reject`).
     func replyPermission(sessionID: String, permissionID: String, response: String) async throws {

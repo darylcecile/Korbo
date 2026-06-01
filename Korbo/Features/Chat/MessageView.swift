@@ -4,10 +4,17 @@ import UIKit
 /// Renders a single message (user or assistant) and its ordered parts.
 struct MessageView: View {
     let item: OCMessageItem
+    @EnvironmentObject private var store: KorboStore
     @ObservedObject private var speech = SpeechController.shared
     @State private var showCopyConfirm = false
 
     var body: some View {
+        content
+            .opacity(store.isMessageReverted(item.id) ? 0.45 : 1)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if item.info.role == .user {
             userMessage
         } else {
@@ -48,6 +55,7 @@ struct MessageView: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
         }
+        historyMenuItems
     }
 
     // MARK: Assistant
@@ -92,6 +100,22 @@ struct MessageView: View {
             ShareLink(item: visibleTextContent) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
+        }
+        historyMenuItems
+    }
+
+    @ViewBuilder
+    private var historyMenuItems: some View {
+        Divider()
+        Button {
+            Task { await store.forkFromMessage(item.id) }
+        } label: {
+            Label("Fork from here", systemImage: "arrow.triangle.branch")
+        }
+        Button(role: .destructive) {
+            Task { await store.revert(toMessageID: item.id) }
+        } label: {
+            Label("Revert to here", systemImage: "arrow.uturn.backward")
         }
     }
 

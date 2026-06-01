@@ -86,6 +86,23 @@ struct ChatPane: View {
             }
             Spacer()
 
+            if store.selectedSessionID != nil && !store.messages.isEmpty {
+                Button {
+                    Task { await store.summarize() }
+                } label: {
+                    if store.isSummarizing {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "rectangle.compress.vertical")
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isSummarizing)
+                .help("Summarize conversation")
+                .accessibilityLabel("Summarize conversation")
+            }
+
             Button { app.showRightSidebar.toggle() } label: {
                 Image(systemName: "sidebar.right")
             }
@@ -241,6 +258,39 @@ struct ChatPane: View {
         return ref.providerID == providerID && ref.modelID == modelID
     }
 
+    // MARK: Reverted banner
+
+    private var revertedBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.uturn.backward.circle")
+                .foregroundStyle(Theme.removed)
+            Text(revertedBannerText)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Button("Undo") {
+                Task { await store.unrevert() }
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(Theme.accent)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.panelRaised))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    private var revertedBannerText: String {
+        let count = store.revertedMessageCount
+        if count > 0 {
+            return "Reverted — \(count) message\(count == 1 ? "" : "s") hidden"
+        }
+        return "Conversation reverted"
+    }
+
     // MARK: Messages
 
     @ViewBuilder
@@ -297,6 +347,12 @@ struct ChatPane: View {
                             .padding(.vertical, 24)
                         }
                         .coordinateSpace(name: "chatScroll")
+                        .overlay(alignment: .top) {
+                            if store.isReverted {
+                                revertedBanner
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                        }
                         .onPreferenceChange(BottomOffsetKey.self) { maxY in
                             // Pinned when the bottom sentinel sits within the
                             // visible viewport (plus a little slack).

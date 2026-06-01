@@ -23,6 +23,7 @@ struct OCSession: Codable, Identifiable, Hashable {
     var model: OCModelRef?
     var share: Share?
     var time: Time?
+    var revert: Revert?
 
     struct Summary: Codable, Hashable {
         var additions: Double?
@@ -41,6 +42,16 @@ struct OCSession: Codable, Identifiable, Hashable {
         var created: Double?
         var updated: Double?
         var archived: Double?
+    }
+
+    /// Present when the session has been reverted to an earlier message.
+    /// `messageID` is the first reverted (hidden) message; everything from it
+    /// onward is undone until `unrevert`.
+    struct Revert: Codable, Hashable {
+        var messageID: String?
+        var partID: String?
+        var snapshot: String?
+        var diff: String?
     }
 
     /// Display name for the session's project (last path component of directory).

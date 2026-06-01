@@ -65,7 +65,8 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P1 Step / snapshot / patch / compaction parts
 - [ ] P0 Per‑message footer: tokens, cost, duration, timestamp
 - [x] P0 Message actions: copy — context-menu Copy (long-press) on user + assistant messages, plus inline copy button in the assistant footer with a 1.2s checkmark confirmation; verified on device (clipboard round-trip)
-- [~] P1 Message actions: share, fork, revert/unrevert — share done (ShareLink in the per-message context menu, verified on device); fork + revert/unrevert still pending
+- [x] P1 Message actions: share, fork, revert/unrevert — share (ShareLink), "Fork from here" (POST `/session/{id}/fork` w/ `messageID`), and "Revert to here" (POST `/session/{id}/revert` `{messageID}`, destructive) in the per-message context menu; reverted messages stay in the list but dim to 0.45 opacity, with a top "Reverted — N messages hidden · Undo" banner whose Undo calls POST `/session/{id}/unrevert`; verified on device
+- [x] P1 Session summarize / compact — header compress button (POST `/session/{id}/summarize` `{providerID,modelID,auto}`) triggers a server-side compaction turn; in-flight spinner via `isSummarizing` (POST blocks until compaction completes); verified on device (compaction badge turn started)
 - [ ] P0 Streaming: incremental text/reasoning/tool deltas
 - [ ] P0 Abort/stop active run
 - [ ] P0 Inline **permission** card (allow once / always / reject)

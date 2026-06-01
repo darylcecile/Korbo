@@ -52,6 +52,7 @@ final class KorboStore: ObservableObject {
     @Published private(set) var agents: [OCAgent] = []
     @Published private(set) var commands: [OCCommand] = []
     @Published private(set) var isLoadingMessages = false
+    @Published private(set) var isSummarizing = false
     @Published private(set) var lastError: String?
     /// Sessions with an in-progress assistant run (drives the typing indicator
     /// and the composer's stop button). Kept in sync from `session.status` /
@@ -803,6 +804,84 @@ final class KorboStore: ObservableObject {
             lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
             return nil
         }
+    }
+
+    /// Fork the selected session starting from a specific message, then switch
+    /// to the new branch.
+    func forkFromMessage(_ messageID: String) async {
+        guard let client, let sid = selectedSessionID else { return }
+        do {
+            let fork = try await client.forkSession(sid, messageID: messageID)
+            upsertSession(fork)
+            await selectSession(fork.id)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// `POST /session/{id}/summarize` — compact the conversation into a summary
+    /// to reclaim context. Uses the currently resolved model.
+    func summarize() async {
+        guard let client, let sid = selectedSessionID, let model = resolveModel() else { return }
+        isSummarizing = true
+        defer { isSummarizing = false }
+        do {
+            _ = try await client.summarize(sessionID: sid,
+                                           providerID: model.providerID,
+                                           modelID: model.modelID)
+            if let updated = try? await client.getSession(sid) { upsertSession(updated) }
+            await loadMessages(sessionID: sid)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// `POST /session/{id}/revert` — roll the session back to (and including) a
+    /// message. Reversible via `unrevert()`.
+    func revert(toMessageID messageID: String) async {
+        guard let client, let sid = selectedSessionID else { return }
+        do {
+            let updated = try await client.revert(sessionID: sid, messageID: messageID)
+            upsertSession(updated)
+            await loadMessages(sessionID: sid)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// `POST /session/{id}/unrevert` — restore messages hidden by a prior revert.
+    func unrevert() async {
+        guard let client, let sid = selectedSessionID else { return }
+        do {
+            let updated = try await client.unrevert(sessionID: sid)
+            upsertSession(updated)
+            await loadMessages(sessionID: sid)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Whether the selected session is currently reverted to an earlier message.
+    var isReverted: Bool { selectedSession?.revert?.messageID != nil }
+
+    /// The first reverted (hidden) message id for the selected session, if any.
+    var revertedMessageID: String? { selectedSession?.revert?.messageID }
+
+    /// Number of currently-loaded messages hidden by the active revert. Returns
+    /// 0 when the server has already pruned reverted messages from the list.
+    var revertedMessageCount: Int {
+        guard let boundary = revertedMessageID,
+              let idx = messages.firstIndex(where: { $0.id == boundary }) else { return 0 }
+        return messages.count - idx
+    }
+
+    /// Whether a given message falls within the reverted (undone) range, i.e. at
+    /// or after the revert boundary. Used to dim reverted rows.
+    func isMessageReverted(_ messageID: String) -> Bool {
+        guard let boundary = revertedMessageID,
+              let bIdx = messages.firstIndex(where: { $0.id == boundary }),
+              let mIdx = messages.firstIndex(where: { $0.id == messageID }) else { return false }
+        return mIdx >= bIdx
     }
 
     /// `POST /session/{id}/share` — publish a public link, merge the updated
