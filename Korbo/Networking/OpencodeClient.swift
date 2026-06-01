@@ -416,4 +416,32 @@ actor OpencodeClient {
         guard let base = config.baseURL else { return nil }
         return URL(string: base.absoluteString + path)
     }
+
+    // MARK: - Provider authentication (OAuth / sign-in methods)
+
+    /// `GET /provider/auth` — sign-in methods (OAuth / API key) keyed by provider id.
+    func providerAuthMethods() async throws -> [String: [ProviderAuthMethod]] {
+        try await getJSON("/provider/auth")
+    }
+
+    /// `POST /provider/{id}/oauth/authorize` — begin an OAuth/device flow.
+    func oauthAuthorize(_ providerID: String, method: Int,
+                        inputs: [String: String]) async throws -> ProviderAuthAuthorization {
+        var payload: [String: Any] = ["method": method]
+        if !inputs.isEmpty { payload["inputs"] = inputs }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        return try await postJSON("/provider/\(providerID)/oauth/authorize", body: body)
+    }
+
+    /// `POST /provider/{id}/oauth/callback` — complete the flow. For `auto`
+    /// (device) flows call repeatedly with no `code` until it returns `true`;
+    /// for `code` flows pass the code the user pasted back.
+    @discardableResult
+    func oauthCallback(_ providerID: String, method: Int, code: String? = nil) async throws -> Bool {
+        var payload: [String: Any] = ["method": method]
+        if let code, !code.isEmpty { payload["code"] = code }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let (data, _) = try await raw(.post, "/provider/\(providerID)/oauth/callback", body: body)
+        return (try? decoder.decode(Bool.self, from: data)) ?? false
+    }
 }

@@ -482,3 +482,68 @@ struct OCShell: Codable, Identifiable, Hashable {
 
     var id: String { path }
 }
+
+// MARK: - Provider authentication (GET /provider/auth, /provider, /auth/{id}, OAuth)
+
+/// One sign-in option a provider offers (an API-key entry or an OAuth flow),
+/// from `GET /provider/auth`.
+struct ProviderAuthMethod: Codable, Hashable {
+    let type: String          // "oauth" | "api"
+    let label: String
+    var prompts: [AuthPrompt]?
+
+    var isOAuth: Bool { type == "oauth" }
+    var isAPIKey: Bool { type == "api" }
+}
+
+/// A single question shown before starting an auth method (e.g. Copilot's
+/// "Select GitHub deployment type"). `when` gates conditional prompts.
+struct AuthPrompt: Codable, Hashable, Identifiable {
+    let type: String          // "text" | "select"
+    let key: String
+    let message: String?
+    var placeholder: String?
+    var options: [AuthPromptOption]?
+    var when: AuthPromptWhen?
+
+    var id: String { key }
+    var isSelect: Bool { type == "select" }
+}
+
+struct AuthPromptOption: Codable, Hashable, Identifiable {
+    let label: String
+    let value: String
+    var hint: String?
+    var id: String { value }
+}
+
+struct AuthPromptWhen: Codable, Hashable {
+    let key: String
+    let op: String            // "eq" | "neq"
+    let value: String
+
+    /// Whether this prompt should be shown given the current answers.
+    func isSatisfied(by answers: [String: String]) -> Bool {
+        let current = answers[key]
+        switch op {
+        case "eq":  return current == value
+        case "neq": return current != value
+        default:    return true
+        }
+    }
+}
+
+/// Result of starting an OAuth flow (`POST /provider/{id}/oauth/authorize`).
+/// `method == "auto"` → user enters `instructions` code at `url`, then we poll
+/// the callback; `method == "code"` → user pastes a code back into the callback.
+struct ProviderAuthAuthorization: Codable, Hashable {
+    let url: String
+    let method: String        // "auto" | "code"
+    let instructions: String
+
+    var isAuto: Bool { method == "auto" }
+}
+
+/// A provider entry from `GET /provider` (`all`) plus the `connected` list.
+/// Note: the canonical provider model is `OCProvider` / `OCProvidersResponse`
+/// defined above; this section only adds the *auth-method* types.

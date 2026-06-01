@@ -17,6 +17,16 @@ struct SettingsView: View {
     @State private var keyInput: String = ""
     @State private var removeTarget: OCProvider?
     @State private var showAllProviders = false
+    @State private var oauthLaunch: OAuthLaunch?
+
+    /// Identifies a specific OAuth sign-in option (a provider + one of its
+    /// `oauth`-type auth methods) so it can drive a `.sheet(item:)`.
+    struct OAuthLaunch: Identifiable {
+        let provider: OCProvider
+        let methodIndex: Int
+        let method: ProviderAuthMethod
+        var id: String { "\(provider.id)#\(methodIndex)" }
+    }
 
     var body: some View {
         NavigationStack {
@@ -72,6 +82,16 @@ struct SettingsView: View {
                     }
                     .presentationDetents([.medium])
                 }
+            }
+            .sheet(item: $oauthLaunch) { launch in
+                ProviderOAuthSheet(providerID: launch.provider.id,
+                                   providerName: launch.provider.name ?? launch.provider.id,
+                                   methodIndex: launch.methodIndex,
+                                   method: launch.method)
+                    .presentationDetents([.medium, .large])
+            }
+            .task {
+                if store.status.isConnected { await store.loadProviderAuthMethods() }
             }
         }
     }
@@ -313,6 +333,15 @@ struct SettingsView: View {
             }
             Spacer()
             Menu {
+                ForEach(Array(oauthMethods(for: provider).enumerated()), id: \.offset) { entry in
+                    Button {
+                        oauthLaunch = OAuthLaunch(provider: provider,
+                                                  methodIndex: entry.element.index,
+                                                  method: entry.element.method)
+                    } label: {
+                        Label(entry.element.method.label, systemImage: "person.badge.key")
+                    }
+                }
                 Button {
                     keyTarget = provider
                     keyInput = ""
@@ -332,6 +361,15 @@ struct SettingsView: View {
             .disabled(!store.status.isConnected || store.isUpdatingAuth)
             .accessibilityLabel("Provider options")
         }
+    }
+
+    /// OAuth sign-in methods for a provider (with their original index, which the
+    /// authorize/callback endpoints require), from `GET /provider/auth`.
+    private func oauthMethods(for provider: OCProvider) -> [(index: Int, method: ProviderAuthMethod)] {
+        let methods = store.providerAuthMethods[provider.id] ?? []
+        return methods.enumerated()
+            .filter { $0.element.isOAuth }
+            .map { (index: $0.offset, method: $0.element) }
     }
 
     private func modelCountLabel(_ provider: OCProvider) -> String {
