@@ -45,8 +45,12 @@ struct RootView: View {
         HStack(spacing: 0) {
             if !mode.isCompact {
                 SessionsSidebar()
-                    .frame(width: mode.isWide ? 300 : 280)
-                Divider().overlay(Theme.border)
+                    .frame(width: mode.isWide ? app.sessionsPaneWidth : 280)
+                if mode.isWide {
+                    PaneResizeHandle { dx in app.resizeSessionsPane(by: dx) }
+                } else {
+                    Divider().overlay(Theme.border)
+                }
             }
 
             Group {
@@ -59,23 +63,18 @@ struct RootView: View {
             .frame(maxWidth: .infinity)
 
             if mode.isWide && app.showRightSidebar {
-                Divider().overlay(Theme.border)
+                PaneResizeHandle { dx in app.resizeContextPane(by: -dx, available: width) }
                 ContextPane()
-                    .frame(width: rightPaneWidth(wide: true, available: width))
+                    .frame(width: app.contextPaneWidth.clamped(to: AppModel.contextWidthRange.lowerBound...min(AppModel.contextWidthRange.upperBound, width * 0.6)))
                     .transition(.move(edge: .trailing))
             }
         }
     }
 
-    /// The file viewer needs more horizontal room than the git/context tabs, so
-    /// the right pane widens for the files tab (capped so it never crowds out the
-    /// chat column).
-    private func rightPaneWidth(wide: Bool, available: CGFloat) -> CGFloat {
-        let target: CGFloat = app.rightTab == .files ? 480 : 360
-        if wide {
-            return min(target, max(360, available * 0.55))
-        }
-        return min(target, available * 0.92)
+    /// Width used for the context pane when shown as an overlay drawer (narrow
+    /// windows): honour the user's chosen width but never exceed the window.
+    private func drawerContextWidth(_ width: CGFloat) -> CGFloat {
+        min(app.contextPaneWidth, width * 0.92)
     }
 
     /// Sessions (left) and context (right) drawers shown over the chat when the
@@ -102,7 +101,7 @@ struct RootView: View {
                 Spacer(minLength: 0)
                 Divider().overlay(Theme.border)
                 ContextPane()
-                    .frame(width: rightPaneWidth(wide: false, available: width))
+                    .frame(width: drawerContextWidth(width))
                     .background(Theme.panel)
             }
             .transition(.move(edge: .trailing))
@@ -158,6 +157,41 @@ private struct GlobalShortcuts: View {
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+}
+
+/// A 1-pt divider with a wider invisible hit target that lets the user drag to
+/// resize the adjacent pane. Reports the incremental horizontal delta so callers
+/// can apply (and clamp/persist) it however they like.
+private struct PaneResizeHandle: View {
+    let onChange: (CGFloat) -> Void
+    @State private var lastTranslation: CGFloat = 0
+    @State private var active = false
+
+    var body: some View {
+        Rectangle()
+            .fill(active ? Theme.accent : Theme.border)
+            .frame(width: active ? 2 : 1)
+            .overlay {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 16)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if !active { active = true }
+                                let dx = value.translation.width - lastTranslation
+                                lastTranslation = value.translation.width
+                                onChange(dx)
+                            }
+                            .onEnded { _ in
+                                lastTranslation = 0
+                                active = false
+                            }
+                    )
+            }
+            .hoverEffect(.highlight)
     }
 }
 

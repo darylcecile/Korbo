@@ -32,6 +32,41 @@ final class AppModel: ObservableObject {
     /// rather than inline; this controls its visibility.
     @Published var sessionsDrawerOpen = false
 
+    /// User-adjustable widths for the inline side panes (drag the dividers).
+    /// Persisted across launches; clamped on every change.
+    @Published var sessionsPaneWidth: CGFloat = AppModel.loadWidth(sessionsWidthKey, fallback: 300)
+    @Published var contextPaneWidth: CGFloat = AppModel.loadWidth(contextWidthKey, fallback: 420)
+
+    static let sessionsWidthRange: ClosedRange<CGFloat> = 240...460
+    static let contextWidthRange: ClosedRange<CGFloat> = 300...760
+    private static let sessionsWidthKey = "korbo.sessionsPaneWidth"
+    private static let contextWidthKey = "korbo.contextPaneWidth"
+
+    private static func loadWidth(_ key: String, fallback: CGFloat) -> CGFloat {
+        let stored = UserDefaults.standard.double(forKey: key)
+        return stored > 0 ? CGFloat(stored) : fallback
+    }
+
+    /// Adjust the sessions pane width by `delta` points, clamped and persisted.
+    func resizeSessionsPane(by delta: CGFloat) {
+        let next = (sessionsPaneWidth + delta)
+            .clamped(to: Self.sessionsWidthRange)
+        guard next != sessionsPaneWidth else { return }
+        sessionsPaneWidth = next
+        UserDefaults.standard.set(Double(next), forKey: Self.sessionsWidthKey)
+    }
+
+    /// Adjust the context pane width by `delta` points. The upper bound also
+    /// respects the available window width so the pane never crowds out the chat.
+    func resizeContextPane(by delta: CGFloat, available: CGFloat) {
+        let upper = min(Self.contextWidthRange.upperBound, max(Self.contextWidthRange.lowerBound, available * 0.6))
+        let next = (contextPaneWidth + delta)
+            .clamped(to: Self.contextWidthRange.lowerBound...upper)
+        guard next != contextPaneWidth else { return }
+        contextPaneWidth = next
+        UserDefaults.standard.set(Double(next), forKey: Self.contextWidthKey)
+    }
+
     func toggleCommandPalette() { showCommandPalette.toggle() }
     func toggleTerminal() { showTerminal.toggle() }
     func focusComposer() { focusComposerToken &+= 1 }
@@ -84,5 +119,12 @@ final class AppModel: ObservableObject {
             case .context: return "doc.text.magnifyingglass"
             }
         }
+    }
+}
+
+extension Comparable {
+    /// Clamp a value into a closed range.
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

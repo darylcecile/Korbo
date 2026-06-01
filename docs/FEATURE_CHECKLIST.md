@@ -11,7 +11,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 ## 1. App shell & global layout
 - [x] P0 Three‑pane layout: sessions · conversation · context — width-adaptive in `RootView` (GeometryReader → `AppModel.LayoutMode`)
 - [x] P0 Collapsible right sidebar (toggle) — `showRightSidebar`, header button + ⌘\
-- [ ] P1 Resizable panes (drag dividers) with min/max widths
+- [x] P1 Resizable panes (drag dividers) with min/max widths — `PaneResizeHandle` on the sessions↔chat and chat↔context dividers; widths clamped (sessions 240–460, context 300–760 and ≤60% of window) and persisted in `UserDefaults`; accent highlight + pointer hover while dragging
 - [x] P1 Auto‑collapse right/left at narrow widths (Split View / Stage Manager) — breakpoints compact<720 / medium / wide≥1080; side panes promoted to overlay drawers
 - [x] P0 Landscape‑first layout; portrait collapses to center + drawers — compact = chat only with sessions (left) + context (right) overlay drawers; medium = sessions inline + context drawer
 - [ ] P0 Top bar: model/agent selector, session title, project·branch·diff subtitle
