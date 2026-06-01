@@ -24,10 +24,36 @@ struct MessageView: View {
 
     @ViewBuilder
     private var content: some View {
-        if item.info.role == .user {
+        if !markerParts.isEmpty && !hasBubbleContent {
+            // Structural-only message (e.g. a compaction marker): render as a
+            // centered divider rather than an empty chat bubble.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(markerParts) { part in
+                    partView(part)
+                }
+            }
+        } else if item.info.role == .user {
             userMessage
         } else {
             assistantMessage
+        }
+    }
+
+    /// Parts that render as structural dividers rather than bubble content.
+    private var markerParts: [OCPart] {
+        item.parts.filter { [.compaction, .patch, .snapshot, .subtask].contains($0.type) }
+    }
+
+    /// Whether the message carries any user/assistant bubble content (text,
+    /// reasoning, files, tools) as opposed to only structural markers.
+    private var hasBubbleContent: Bool {
+        item.parts.contains { part in
+            switch part.type {
+            case .compaction, .patch, .snapshot, .subtask, .stepStart, .stepFinish, .retry:
+                return false
+            default:
+                return true
+            }
         }
     }
 
@@ -145,6 +171,19 @@ struct MessageView: View {
             AttachmentView(part: part)
         case .tool:
             ToolPartView(part: part)
+        case .compaction:
+            PartMarkerView(
+                icon: "arrow.triangle.merge",
+                text: part.auto == true ? "Context auto-compacted" : "Context compacted")
+        case .patch:
+            PartMarkerView(icon: "doc.badge.gearshape", text: "Patch applied")
+        case .snapshot:
+            PartMarkerView(icon: "camera.aperture", text: "Snapshot")
+        case .subtask:
+            PartMarkerView(icon: "person.2", text: "Subagent task")
+        // step-start / step-finish / retry are internal turn boundaries with no
+        // user-facing content (token/cost data is surfaced in the footer + usage
+        // ring), so they intentionally render nothing.
         default:
             EmptyView()
         }
@@ -247,6 +286,37 @@ private struct ReasoningView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
+    }
+}
+
+/// A slim centered divider used for structural conversation events (compaction,
+/// patch, snapshot, subagent task) so they read as boundaries rather than chat
+/// bubbles — mirroring the opencode GUI.
+private struct PartMarkerView: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            line
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text(text)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(Theme.textTertiary)
+            line
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
+    }
+
+    private var line: some View {
+        Rectangle().fill(Theme.border).frame(height: 1)
     }
 }
 

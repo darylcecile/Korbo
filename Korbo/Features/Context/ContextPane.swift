@@ -6,6 +6,7 @@ import SwiftUI
 struct ContextPane: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    @State private var previewImage: ContextImagePreview?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,9 @@ struct ContextPane: View {
             Spacer(minLength: 0)
         }
         .background(Theme.panel)
+        .sheet(item: $previewImage) { preview in
+            ContextImagePreviewSheet(preview: preview)
+        }
     }
 
     private var tabStrip: some View {
@@ -93,7 +97,7 @@ struct ContextPane: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(files) { file in
-                        ContextFileRow(file: file)
+                        ContextFileRow(file: file) { open(file) }
                     }
                 }
                 .padding(10)
@@ -101,6 +105,17 @@ struct ContextPane: View {
                     RoundedRectangle(cornerRadius: 8).fill(Theme.bg)
                 )
             }
+        }
+    }
+
+    /// Tapping a context file either previews an embedded image attachment or
+    /// opens a real file in the viewer.
+    private func open(_ file: ContextFile) {
+        if file.isImage, let data = file.inlineData {
+            previewImage = ContextImagePreview(name: file.name, data: data)
+        } else {
+            Task { await store.openFile(file.path) }
+            app.showFilesCenter()
         }
     }
 
@@ -318,6 +333,7 @@ private struct ContextTodoRow: View {
 
 private struct ContextFileRow: View {
     let file: ContextFile
+    let onTap: () -> Void
 
     private var glyph: String {
         guard let mime = file.mime?.lowercased() else { return "doc" }
@@ -327,20 +343,79 @@ private struct ContextFileRow: View {
         return "doc"
     }
 
+    /// Image attachments carry their bytes inline (data URL); real files open in
+    /// the viewer. Either way the row is actionable, so show a hint chevron.
+    private var canOpen: Bool { file.isImage ? file.inlineData != nil : true }
+
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: glyph)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textTertiary)
-                .frame(width: 16)
-            Text(file.name)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                Image(systemName: glyph)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                Text(file.name)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                if canOpen {
+                    Image(systemName: file.isImage ? "eye" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(!canOpen)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Context file \(file.name)")
+        .accessibilityHint(canOpen ? (file.isImage ? "Preview image" : "Open file") : "")
+    }
+}
+
+// MARK: - Image preview
+
+struct ContextImagePreview: Identifiable {
+    let id = UUID()
+    let name: String
+    let data: Data
+}
+
+private struct ContextImagePreviewSheet: View {
+    let preview: ContextImagePreview
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let image = UIImage(data: preview.data) {
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    }
+                } else {
+                    Text("Unable to preview this attachment.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.bg)
+            .navigationTitle(preview.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }

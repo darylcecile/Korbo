@@ -1095,7 +1095,7 @@ final class KorboStore: ObservableObject {
             for part in item.parts where part.type == .file {
                 let path = part.filename ?? part.url ?? "file"
                 guard seen.insert(path).inserted else { continue }
-                result.append(ContextFile(path: path, mime: part.mime))
+                result.append(ContextFile(path: path, mime: part.mime, url: part.url))
             }
         }
         return result

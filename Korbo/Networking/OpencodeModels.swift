@@ -211,6 +211,7 @@ struct OCPart: Codable, Identifiable, Hashable {
     var filename: String? = nil       // file
     var mime: String? = nil           // file
     var url: String? = nil            // file
+    var auto: Bool? = nil             // compaction (auto vs manual)
 
     var isVisibleText: Bool {
         type == .text && (synthetic != true) && !(text ?? "").isEmpty
@@ -364,8 +365,21 @@ struct OCQuestionOption: Codable, Hashable {
 struct ContextFile: Identifiable, Hashable {
     let path: String
     var mime: String?
+    var url: String?
     var id: String { path }
     var name: String { (path as NSString).lastPathComponent }
+
+    var isImage: Bool { mime?.lowercased().hasPrefix("image/") ?? false }
+
+    /// Decoded bytes when `url` is an embedded `data:` URI (used for inline
+    /// previews of attachments that aren't real files on disk).
+    var inlineData: Data? {
+        guard let url, url.hasPrefix("data:"),
+              let comma = url.firstIndex(of: ","),
+              url[..<comma].contains("base64") else { return nil }
+        let b64 = String(url[url.index(after: comma)...])
+        return Data(base64Encoded: b64)
+    }
 }
 
 // MARK: - VCS / files

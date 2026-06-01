@@ -62,7 +62,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Tool: full‑output modal/expand
 - [x] P0 **Todo** list rendering (todowrite/`todo.updated`)
 - [x] P0 **File/image attachments** inline (user + assistant)
-- [ ] P1 Step / snapshot / patch / compaction parts
+- [~] P1 Step / snapshot / patch / compaction parts — `compaction` renders as a centered "Context compacted" divider above the summary (verified on device, session `ses_1803cbd07…`); `patch`/`snapshot`/`subtask` render compact defensive markers (build-only — no live data on the server to trigger them); `step-start`/`step-finish` intentionally stay hidden (internal; token/cost already surfaced in footer + usage ring)
 - [ ] P0 Per‑message footer: tokens, cost, duration, timestamp
 - [x] P0 Message actions: copy — context-menu Copy (long-press) on user + assistant messages, plus inline copy button in the assistant footer with a 1.2s checkmark confirmation; verified on device (clipboard round-trip)
 - [x] P1 Message actions: share, fork, revert/unrevert — share (ShareLink), "Fork from here" (POST `/session/{id}/fork` w/ `messageID`), and "Revert to here" (POST `/session/{id}/revert` `{messageID}`, destructive) in the per-message context menu; reverted messages stay in the list but dim to 0.45 opacity, with a top "Reverted — N messages hidden · Undo" banner whose Undo calls POST `/session/{id}/unrevert`; verified on device
@@ -144,7 +144,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Context items list (files/attachments/agents/skills) w/ token counts — Context tab "Context files" panel lists files/attachments referenced in the conversation (deduped from `file` parts via `store.contextFiles`) with a mime-aware glyph; opencode exposes only aggregate context tokens (shown in the usage bar), not per-item counts, so per-file token counts are intentionally omitted; verified on device
 - [x] P1 Token‑usage breakdown (input/cache/output/reasoning) + bar — proportional segmented bar + per-bucket legend from the latest assistant turn's `tokens`; verified on device
 - [x] P1 Context‑limit warning — total vs model `limit.context` with % and an amber warning at ≥80%; verified on device (200K window resolved)
-- [ ] P1 Remove item from context / view file
+- [~] P1 Remove item from context / view file — view: context-file rows are now tappable; image attachments open an inline base64-decoded preview sheet, text files open in the Files center pane (verified on device with `korbo-test.png`). Remove-from-context still pending (needs server support)
 - [ ] P2 Context modes/tabs (diff/file/context/plan/preview/browser)
 - [x] P1 Agent todo panel — Context tab "Agent todos" panel reads the latest `todowrite`/`todoread` tool part (`store.latestTodos`), showing completed/total progress + per-row glyph (half-circle for in-progress accent, struck-through green when completed) and priority; hidden when empty; verified on device
 - [ ] P2 Plan editor; project notes & todo panel
