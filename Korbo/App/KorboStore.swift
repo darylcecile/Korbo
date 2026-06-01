@@ -49,6 +49,10 @@ final class KorboStore: ObservableObject {
     @Published var selectedSessionID: String?
     @Published private(set) var messages: [OCMessageItem] = []
     @Published private(set) var providers: OCProvidersResponse?
+    /// Sign-in methods per provider (`GET /provider/auth`), loaded lazily so the
+    /// providers UI can offer OAuth (e.g. "Login with GitHub Copilot") and not
+    /// just API-key entry.
+    @Published private(set) var providerAuthMethods: [String: [ProviderAuthMethod]] = [:]
     @Published private(set) var agents: [OCAgent] = []
     @Published private(set) var commands: [OCCommand] = []
     @Published private(set) var isLoadingMessages = false
@@ -414,6 +418,40 @@ final class KorboStore: ObservableObject {
         }
     }
 
+    /// `GET /provider/auth` — populate the per-provider sign-in method catalogue.
+    func loadProviderAuthMethods() async {
+        guard let client else { return }
+        if let methods = try? await client.providerAuthMethods() {
+            providerAuthMethods = methods
+        }
+    }
+
+    /// `POST /provider/{id}/oauth/authorize` — start an OAuth/device flow.
+    func startProviderOAuth(_ providerID: String, method: Int,
+                            inputs: [String: String]) async -> ProviderAuthAuthorization? {
+        guard let client else { return nil }
+        do {
+            return try await client.oauthAuthorize(providerID, method: method, inputs: inputs)
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+            return nil
+        }
+    }
+
+    /// `POST /provider/{id}/oauth/callback` — complete an OAuth flow. On success
+    /// the provider list is refreshed so the new connection appears immediately.
+    func completeProviderOAuth(_ providerID: String, method: Int, code: String?) async -> Bool {
+        guard let client else { return false }
+        do {
+            let ok = try await client.oauthCallback(providerID, method: method, code: code)
+            if ok { await reloadProviders() }
+            return ok
+        } catch {
+            lastError = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
     func selectSession(_ id: String) async {
         selectedSessionID = id
         await loadMessages(sessionID: id)
@@ -729,10 +767,51 @@ final class KorboStore: ObservableObject {
         for session in visible {
             buckets[bucket(for: session), default: []].append(session)
         }
-        return SessionBucket.allCases.compactMap { b in
-            guard let items = buckets[b], !items.isEmpty else { return nil }
-            return SessionGroup(id: b.id, title: b.title, sessions: sortedSessions(items), bucket: b)
+        var groups: [SessionGroup] = []
+        // Fixed recent buckets, in display order.
+        for b in [SessionBucket.pinned, .today, .yesterday, .week, .prev30] {
+            guard let items = buckets[b], !items.isEmpty else { continue }
+            groups.append(SessionGroup(id: b.id, title: b.title, sessions: sortedSessions(items), bucket: b))
         }
+        // Sessions older than 30 days are split into month-year sections so the
+        // sidebar reads like a calendar rather than one giant "Older" pile.
+        if let older = buckets[.older], !older.isEmpty {
+            groups.append(contentsOf: monthGroups(older))
+        }
+        if let archived = buckets[.archived], !archived.isEmpty {
+            groups.append(SessionGroup(id: SessionBucket.archived.id,
+                                       title: SessionBucket.archived.title,
+                                       sessions: sortedSessions(archived), bucket: .archived))
+        }
+        return groups
+    }
+
+    /// Split older sessions into descending month-year sections (e.g. "April 2026").
+    /// Sessions with no activity timestamp fall back to a trailing "Older" group.
+    private func monthGroups(_ sessions: [OCSession]) -> [SessionGroup] {
+        let cal = Calendar.current
+        var byMonth: [DateComponents: [OCSession]] = [:]
+        var dateless: [OCSession] = []
+        for s in sessions {
+            guard let d = s.lastActivity else { dateless.append(s); continue }
+            byMonth[cal.dateComponents([.year, .month], from: d), default: []].append(s)
+        }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "LLLL yyyy"
+        var groups: [SessionGroup] = byMonth.keys.sorted { a, b in
+            if (a.year ?? 0) != (b.year ?? 0) { return (a.year ?? 0) > (b.year ?? 0) }
+            return (a.month ?? 0) > (b.month ?? 0)
+        }.map { comps in
+            let items = byMonth[comps] ?? []
+            let title = (cal.date(from: comps)).map(fmt.string(from:)) ?? "Older"
+            return SessionGroup(id: "month:\(comps.year ?? 0)-\(comps.month ?? 0)",
+                                title: title, sessions: sortedSessions(items), bucket: .older)
+        }
+        if !dateless.isEmpty {
+            groups.append(SessionGroup(id: SessionBucket.older.id, title: SessionBucket.older.title,
+                                       sessions: sortedSessions(dateless), bucket: .older))
+        }
+        return groups
     }
 
     private func projectGroups(_ visible: [OCSession]) -> [SessionGroup] {
@@ -789,8 +868,9 @@ final class KorboStore: ObservableObject {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return .today }
         if cal.isDateInYesterday(date) { return .yesterday }
-        if let days = cal.dateComponents([.day], from: date, to: Date()).day, days < 7 {
-            return .week
+        if let days = cal.dateComponents([.day], from: date, to: Date()).day {
+            if days < 7 { return .week }
+            if days < 30 { return .prev30 }
         }
         return .older
     }
@@ -1347,7 +1427,7 @@ final class KorboStore: ObservableObject {
 
 /// Recency buckets for the sessions sidebar, in display order.
 enum SessionBucket: String, CaseIterable, Identifiable {
-    case pinned, today, yesterday, week, older, archived
+    case pinned, today, yesterday, week, prev30, older, archived
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -1355,6 +1435,7 @@ enum SessionBucket: String, CaseIterable, Identifiable {
         case .today:     return "Today"
         case .yesterday: return "Yesterday"
         case .week:      return "Previous 7 days"
+        case .prev30:    return "Previous 30 days"
         case .older:     return "Older"
         case .archived:  return "Archived"
         }
