@@ -471,20 +471,27 @@ struct FileViewer: View {
         let gutterWidth = CGFloat(gutter) * 7.4 + 4
         let visible = visibleIndices()
         return ScrollViewReader { proxy in
-            ScrollView([.vertical, .horizontal]) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(visible, id: \.self) { idx in
-                        lineRow(idx: idx, runs: lines[idx], gutterWidth: gutterWidth)
-                            .id(idx)
+            GeometryReader { geo in
+                ScrollView([.vertical, .horizontal]) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(visible, id: \.self) { idx in
+                            lineRow(idx: idx, runs: lines[idx], gutterWidth: gutterWidth)
+                                .id(idx)
+                        }
+                        if truncated {
+                            Text("… file truncated at \(Self.maxLines) lines")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Theme.textTertiary)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                        }
                     }
-                    if truncated {
-                        Text("… file truncated at \(Self.maxLines) lines")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Theme.textTertiary)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                    }
+                    .padding(.vertical, 6)
+                    // Pin content to the top: force it to be at least the
+                    // viewport height so short files don't get vertically
+                    // centered by the (greedy) ScrollView, while long files
+                    // still overflow and scroll normally.
+                    .frame(minHeight: geo.size.height, alignment: .topLeading)
                 }
-                .padding(.vertical, 6)
             }
             .onChange(of: current) { _ in scrollToCurrent(proxy) }
             .onChange(of: scrollRequest) { target in
