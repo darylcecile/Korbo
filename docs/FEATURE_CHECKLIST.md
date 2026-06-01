@@ -14,16 +14,16 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Resizable panes (drag dividers) with min/max widths — `PaneResizeHandle` on the sessions↔chat and chat↔context dividers; widths clamped (sessions 240–460, context 300–760 and ≤60% of window) and persisted in `UserDefaults`; accent highlight + pointer hover while dragging
 - [x] P1 Auto‑collapse right/left at narrow widths (Split View / Stage Manager) — breakpoints compact<720 / medium / wide≥1080; side panes promoted to overlay drawers
 - [x] P0 Landscape‑first layout; portrait collapses to center + drawers — compact = chat only with sessions (left) + context (right) overlay drawers; medium = sessions inline + context drawer
-- [ ] P0 Top bar: model/agent selector, session title, project·branch·diff subtitle
+- [x] P0 Top bar: model/agent selector, session title, project·branch·diff subtitle — header shows the context ring, session title and project + `+adds/-dels` diff subtitle; model (`modelMenu`) and agent (`agentMenu`) selectors live in the composer footer rather than the top bar; verified on device
 - [x] P0 Top bar: context‑usage ring (%) — `contextRing` in ChatPane header: 24pt circular progress ring colored green→amber→red by usage, shows integer %, taps to open the context sidebar; reads `usedTokens`/`contextLimit`; verified on device
-- [ ] P1 Top bar: "open in editor" deep link (vscode://, etc.)
-- [ ] P1 Top bar: local/remote (server) selector
-- [ ] P0 Top bar: account/avatar menu
+- [ ] ~~P1 Top bar: "open in editor" deep link (vscode://, etc.)~~ — deferred: not meaningful on iPad (no desktop editor to receive the deep link)
+- [x] P1 Top bar: local/remote (server) selector — server quick-switch menu in the sidebar footer (status dot + active server name); lists saved servers with a checkmark on the active one, switches + reconnects via `switchServer(to:)`, and opens the Connection sheet via "Manage servers…"; verified on device
+- [ ] ~~P0 Top bar: account/avatar menu~~ — N/A: opencode servers are unauthenticated (auth is handled by the reverse proxy, configured in the Connection sheet), so there is no account/identity to surface
 - [x] P1 Bottom terminal dock (toggle, resize) — repositioned: terminal toggles into the **centre column** (sessions‑toolbar terminal button / ⌘T) so it gets full chat‑pane width; right sidebar can be collapsed from the terminal header to widen it edge‑to‑edge
 - [x] P1 Command palette (⌘P): sessions, files, commands, settings, actions — `CommandPalette.swift`, fuzzy file search (`/find/file`), grouped Actions/Sessions/Files, ↑↓ nav + ↵ run + Esc, blurred overlay
 - [x] P1 Hardware‑keyboard shortcuts (mirror openchamber set where sensible) — `GlobalShortcuts` in RootView: ⌘P palette, ⌘\ toggle right panel, ⌘1–3 git/files/context, ⌘T toggle terminal, ⌘N new session, ⌘⇧L focus composer, ⌘, settings, ⌘↵ send
 - [ ] P2 Mini chat window / multi‑window (Stage Manager)
-- [ ] P0 Dark theme baseline; light/system later
+- [x] P0 Dark theme baseline; light/system later — app ships a single tuned dark theme (`Theme`); light/system variants deferred
 
 ## 2. Sessions sidebar (left)
 - [x] P0 Session list with live data from `/session` + events
@@ -47,8 +47,8 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P2 Sort options + project grouping — `SessionGrouping` (recency/project) + `SessionSort` (updated/created/title) menu, persisted; verified on device
 
 ## 3. Conversation view (center)
-- [ ] P0 Message list, user vs assistant distinction
-- [ ] P0 Message header: sender/model logo, model badge, agent badge
+- [x] P0 Message list, user vs assistant distinction — user turns render as right-aligned bubbles, assistant turns left-aligned with a sparkle avatar + model/mode badge; verified on device
+- [x] P0 Message header: sender/model logo, model badge, agent badge — each assistant turn shows the model id (e.g. `claude-sonnet-4.6`) plus the agent/mode badge (e.g. `build`/`plan`/`compaction`); verified on device
 - [x] P1 Reasoning‑effort/variant badge — `reasoningMenu` brain-icon chip in composer footer shows the active variant (e.g. "Medium"); hidden for non-reasoning models; verified on device
 - [x] P0 **Text part**: markdown rendering
 - [x] P0 Code blocks: syntax highlighting + copy button
@@ -68,11 +68,11 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [x] P1 Message actions: share, fork, revert/unrevert — share (ShareLink), "Fork from here" (POST `/session/{id}/fork` w/ `messageID`), and "Revert to here" (POST `/session/{id}/revert` `{messageID}`, destructive) in the per-message context menu; reverted messages stay in the list but dim to 0.45 opacity, with a top "Reverted — N messages hidden · Undo" banner whose Undo calls POST `/session/{id}/unrevert`; verified on device
 - [x] P1 Message actions: delete — destructive "Delete message" (trash) in the per-message context menu opens a "Delete this message?" confirmation dialog; confirm calls DELETE `/session/{id}/message/{messageID}` with optimistic local removal + rollback on error; verified on device (menu + confirmation dialog)
 - [x] P1 Session summarize / compact — header compress button (POST `/session/{id}/summarize` `{providerID,modelID,auto}`) triggers a server-side compaction turn; in-flight spinner via `isSummarizing` (POST blocks until compaction completes); verified on device (compaction badge turn started)
-- [ ] P0 Streaming: incremental text/reasoning/tool deltas
-- [ ] P0 Abort/stop active run
-- [ ] P0 Inline **permission** card (allow once / always / reject)
+- [x] P0 Streaming: incremental text/reasoning/tool deltas — SSE `message.part.updated` → `upsertPart` and `message.part.delta` → `appendDelta` stream text/reasoning/tool output into the live message in place; verified on device (M2)
+- [x] P0 Abort/stop active run — composer shows a red `stop.fill` button while a run is active, calling `store.abort()` → `POST /session/{id}/abort`; verified on device
+- [x] P0 Inline **permission** card (allow once / always / reject) — `PermissionCard` in ChatPane renders `permission.updated` requests with Allow once / Always / Reject, wired to `replyPermission`; verified on device
 - [x] P1 Inline **question** card (reply / reject) — `question.asked` decodes into `pendingQuestions`; `QuestionCard` in ChatPane (mirrors PermissionCard chrome) renders per-question option chips (single/multi-select via FlowLayout) + optional custom TextField, Submit → POST `/question/{requestID}/reply` `{answers:[[label]]}`, Dismiss → POST `/question/{requestID}/reject`; `question.replied`/`question.rejected` events clear the card. Build-verified + render path identical to verified-working permission card; **not yet triggered live on-device** (raised only by the agent's `question` tool, which can't be injected via the read-only SSE stream)
-- [ ] P0 Empty state
+- [x] P0 Empty state — "No messages yet" placeholder plus starter chips shown when a session has no messages and the draft is empty; verified on device
 - [x] P0 Error state (+ retry) — connection-failure banner with `lastError` + Retry (see Connection-status banner)
 - [ ] P1 Pending‑changes bar (unstaged git) — intentionally dropped (redundant with the git panel)
 - [x] P1 Auto‑scroll w/ "scroll to bottom" affordance
@@ -141,7 +141,7 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - [ ] P2 Minimap / code folding
 
 ## 7. Context tab (right)
-- [ ] P1 Context items list (files/attachments/agents/skills) w/ token counts
+- [x] P1 Context items list (files/attachments/agents/skills) w/ token counts — Context tab "Context files" panel lists files/attachments referenced in the conversation (deduped from `file` parts via `store.contextFiles`) with a mime-aware glyph; opencode exposes only aggregate context tokens (shown in the usage bar), not per-item counts, so per-file token counts are intentionally omitted; verified on device
 - [x] P1 Token‑usage breakdown (input/cache/output/reasoning) + bar — proportional segmented bar + per-bucket legend from the latest assistant turn's `tokens`; verified on device
 - [x] P1 Context‑limit warning — total vs model `limit.context` with % and an amber warning at ≥80%; verified on device (200K window resolved)
 - [ ] P1 Remove item from context / view file
@@ -183,24 +183,24 @@ Legend: `[ ]` not started · `[~]` partial · `[x]` done.
 - Deferred: pinch-to-zoom font sizing, persistent scrollback search (not exposed by opencode PTY API)
 
 ## 10. Connection, sync & realtime
-- [ ] P0 `ServerConfig` (baseURL + headers) in Keychain
-- [ ] P0 Health probe (`/global/health`)
-- [ ] P0 SSE `/event` long‑lived connection + reconnect/backoff
-- [ ] P0 Event reducer for all 77 event types (unknown ignored)
-- [ ] P1 Multiple servers, quick switch
+- [x] P0 `ServerConfig` (baseURL + headers) in Keychain — `ServerConfig` persists in UserDefaults with the secret (basic-auth password / bearer token) in the Keychain via `Keychain`; verified on device
+- [x] P0 Health probe (`/global/health`) — `connect()` calls `client.health()` and only flips to Connected on success; verified on device
+- [x] P0 SSE `/event` long‑lived connection + reconnect/backoff — `startEventStream` holds the `/event` stream with reconnect/backoff; verified on device (live streaming)
+- [x] P0 Event reducer for all 77 event types (unknown ignored) — `OCEventType` enum + the store's event handler reduce the known events; unknown types decode to `.unknown` and are ignored; verified on device
+- [x] P1 Multiple servers, quick switch — `ServerStore` persists multiple servers; the sidebar-footer menu switches the active one and reconnects (`switchServer(to:)`); verified on device
 - [x] P1 Connection‑status banner / offline handling — top banner surfaces connecting/failed/disconnected with `lastError` detail + one-tap Retry; hidden while connected; verified on device
 - [ ] P2 Workspace/worktree sync endpoints
 - [ ] P2 Cert pinning option
 
 ## 11. iPad‑native & platform
-- [ ] P0 iPad‑only target, landscape + portrait
+- [x] P0 iPad‑only target, landscape + portrait — XcodeGen target is iPad-only and the adaptive shell supports landscape + portrait; verified on device
 - [ ] P1 Local notifications (permission/question/idle/error)
 - [x] P1 Hardware keyboard shortcuts — global ⌘-shortcuts via `GlobalShortcuts` (palette, panel toggles, tab switches, new session, focus composer, settings, send)
 - [x] P1 Split View / Stage Manager friendliness — width-driven adaptive 3/2/1-pane shell with auto-collapsing side panels + overlay drawers
-- [ ] P1 Share sheet (share session/diff/output)
+- [x] P1 Share sheet (share session/diff/output) — session context menu "Share link" shares the opencode share URL via the native iOS share sheet (`UIActivityViewController` wrapped in `ActivityView`, presented with an `Identifiable` `ShareURLItem`); verified on device (rich link preview, Copy/More)
 - [x] P2 App Intents / Shortcuts — `NewSessionIntent` + `SendPromptIntent` (String prompt param) with `KorboShortcuts: AppShortcutsProvider` phrases; `IntentRouter` singleton holds a pending action (`openAppWhenRun`), `KorboApp` observes via `.onChange` and dispatches to the store (connect → create session if needed → create/send). Build-level verified (`Metadata.appintents` generated); Siri/Shortcuts invocation not drivable in the simulator
 - [ ] P2 Handoff / Continuity
-- [ ] P0 Accessibility: Dynamic Type, VoiceOver, contrast, 44pt targets
+- [~] P0 Accessibility: Dynamic Type, VoiceOver, contrast, 44pt targets — VoiceOver labels added across all panels (icon-only controls labelled, decorative glyphs hidden; verified in the live a11y tree). Dynamic Type and strict 44pt hit-targets deliberately deferred: the layout uses fixed point fonts tuned for compact density, so scaled-font/44pt reflow is a larger refactor tracked separately
 
 ## 12. Multi‑run & advanced (P2)
 - [ ] P2 Multi‑run launcher (multiple sessions/models/branches)
