@@ -1,0 +1,310 @@
+import Foundation
+
+// MARK: - Date parsing helper
+
+/// Parses ISO8601 timestamps, tolerating both fractional and plain seconds.
+/// Returns `nil` on failure so callers can store an optional `Date` without
+/// failing the whole decode. Formatters are built fresh to avoid sharing a
+/// non-`Sendable` instance across decoding closures.
+private func parseISO8601(_ string: String) -> Date? {
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    if let date = plain.date(from: string) { return date }
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return fractional.date(from: string)
+}
+
+private extension KeyedDecodingContainer {
+    /// Decodes an `Int` tolerating a JSON `Double` (e.g. `5.0`).
+    func decodeLenientInt(forKey key: Key) throws -> Int {
+        if let i = try? decode(Int.self, forKey: key) { return i }
+        let d = try decode(Double.self, forKey: key)
+        return Int(d)
+    }
+}
+
+// MARK: - User & balance
+
+/// Authenticated Korbo account (`GET /api/me`).
+struct CloudUser: Codable, Hashable, Identifiable {
+    let id: String
+    let githubLogin: String?
+    let email: String?
+    let isAdmin: Bool
+}
+
+/// Account credit balance (`GET /api/me`). Credits are whole numbers; the JSON
+/// may serialise them as `Double`, so decoding tolerates both.
+struct CloudBalance: Codable, Hashable {
+    let balance: Int
+    let reserved: Int
+    let available: Int
+
+    init(balance: Int, reserved: Int, available: Int) {
+        self.balance = balance
+        self.reserved = reserved
+        self.available = available
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        balance = try c.decodeLenientInt(forKey: .balance)
+        reserved = try c.decodeLenientInt(forKey: .reserved)
+        available = try c.decodeLenientInt(forKey: .available)
+    }
+}
+
+// MARK: - Instances
+
+/// Lifecycle state of a provisioned instance. Unrecognised strings decode to
+/// `.unknown` rather than failing.
+enum CloudInstanceState: String, Codable, Hashable, CaseIterable {
+    case provisioning
+    case starting
+    case ready
+    case sleeping
+    case resuming
+    case suspended
+    case error
+    case terminated
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = CloudInstanceState(rawValue: raw) ?? .unknown
+    }
+
+    /// The instance's opencode proxy is reachable.
+    var isReady: Bool { self == .ready }
+
+    /// The instance is mid-lifecycle and should be polled until it settles.
+    var isTransitional: Bool {
+        self == .provisioning || self == .starting || self == .resuming
+    }
+
+    /// The instance has reached a terminal state and will not become ready
+    /// without further action.
+    var isTerminal: Bool {
+        self == .suspended || self == .error || self == .terminated
+    }
+
+    /// Human-friendly label for the state.
+    var displayLabel: String {
+        switch self {
+        case .provisioning: return "Provisioning"
+        case .starting:     return "Starting"
+        case .ready:        return "Ready"
+        case .sleeping:     return "Sleeping"
+        case .resuming:     return "Resuming"
+        case .suspended:    return "Suspended"
+        case .error:        return "Error"
+        case .terminated:   return "Terminated"
+        case .unknown:      return "Unknown"
+        }
+    }
+}
+
+/// A provisioned cloud instance (`InstanceView`). Timestamps decode from ISO8601
+/// strings and fall back to `nil` on malformed values.
+struct CloudInstance: Codable, Hashable, Identifiable {
+    let id: String
+    let machineType: String
+    let state: CloudInstanceState
+    let repo: String?
+    let reason: String?
+    let createdAt: Date?
+    let expiresAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, machineType, state, repo, reason, createdAt, expiresAt
+    }
+
+    init(
+        id: String,
+        machineType: String,
+        state: CloudInstanceState,
+        repo: String?,
+        reason: String?,
+        createdAt: Date?,
+        expiresAt: Date?
+    ) {
+        self.id = id
+        self.machineType = machineType
+        self.state = state
+        self.repo = repo
+        self.reason = reason
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        machineType = try c.decode(String.self, forKey: .machineType)
+        state = try c.decode(CloudInstanceState.self, forKey: .state)
+        repo = try c.decodeIfPresent(String.self, forKey: .repo)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        createdAt = (try c.decodeIfPresent(String.self, forKey: .createdAt)).flatMap(parseISO8601)
+        expiresAt = (try c.decodeIfPresent(String.self, forKey: .expiresAt)).flatMap(parseISO8601)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(machineType, forKey: .machineType)
+        try c.encode(state.rawValue, forKey: .state)
+        try c.encodeIfPresent(repo, forKey: .repo)
+        try c.encodeIfPresent(reason, forKey: .reason)
+        let formatter = ISO8601DateFormatter()
+        try c.encodeIfPresent(createdAt.map(formatter.string(from:)), forKey: .createdAt)
+        try c.encodeIfPresent(expiresAt.map(formatter.string(from:)), forKey: .expiresAt)
+    }
+}
+
+/// Detailed runtime state for a single instance (`GET /api/instances/:id/state`).
+struct CloudInstanceStateDetail: Codable, Hashable, Identifiable {
+    let id: String
+    let state: CloudInstanceState
+    let machineType: String
+    let reason: String?
+    let expiresAt: Date?
+    let creditsPerMinute: Double
+    let balanceCredits: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id, state, machineType, reason, expiresAt, creditsPerMinute, balanceCredits
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        state = try c.decode(CloudInstanceState.self, forKey: .state)
+        machineType = try c.decode(String.self, forKey: .machineType)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        expiresAt = (try c.decodeIfPresent(String.self, forKey: .expiresAt)).flatMap(parseISO8601)
+        creditsPerMinute = try c.decode(Double.self, forKey: .creditsPerMinute)
+        balanceCredits = try c.decode(Double.self, forKey: .balanceCredits)
+    }
+}
+
+// MARK: - GitHub linkage
+
+/// A GitHub App installation available to the account
+/// (`GET /api/github/installations`).
+struct CloudInstallation: Codable, Hashable, Identifiable {
+    let id: Int
+    let account: String
+}
+
+/// A repository the account can launch an instance against
+/// (`GET /api/github/repos`). Decoded defensively because the backend payload
+/// shape is not fully pinned down: accepts a top-level `full_name`, or an
+/// `{ owner, name }` pair (owner may itself be a string or `{ login }`).
+struct CloudRepo: Codable, Hashable, Identifiable {
+    let fullName: String
+
+    var id: String { fullName }
+
+    init(fullName: String) {
+        self.fullName = fullName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fullName = "full_name"
+        case name
+        case owner
+    }
+
+    private enum OwnerKeys: String, CodingKey {
+        case login
+        case name
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let full = try c.decodeIfPresent(String.self, forKey: .fullName), !full.isEmpty {
+            fullName = full
+            return
+        }
+        let name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        var ownerString: String?
+        if let owner = try? c.decodeIfPresent(String.self, forKey: .owner) {
+            ownerString = owner
+        } else if let ownerContainer = try? c.nestedContainer(keyedBy: OwnerKeys.self, forKey: .owner) {
+            ownerString = (try? ownerContainer.decodeIfPresent(String.self, forKey: .login))
+                ?? (try? ownerContainer.decodeIfPresent(String.self, forKey: .name))
+                ?? nil
+        }
+        if let owner = ownerString, !owner.isEmpty, !name.isEmpty {
+            fullName = "\(owner)/\(name)"
+        } else {
+            fullName = name
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(fullName, forKey: .fullName)
+    }
+}
+
+// MARK: - Machine types
+
+/// A selectable instance machine type with a friendly label. The catalogue is
+/// fixed client-side; see `CloudMachineType.all`.
+struct CloudMachineType: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let isDefault: Bool
+
+    init(id: String, label: String, isDefault: Bool = false) {
+        self.id = id
+        self.label = label
+        self.isDefault = isDefault
+    }
+
+    /// The six supported machine types with hardcoded spec labels.
+    static let all: [CloudMachineType] = [
+        CloudMachineType(id: "lite", label: "lite · 1/16 vCPU / 0.25 GiB"),
+        CloudMachineType(id: "basic", label: "basic · 1/4 vCPU / 1 GiB"),
+        CloudMachineType(id: "standard-1", label: "standard-1 · 1/2 vCPU / 4 GiB", isDefault: true),
+        CloudMachineType(id: "standard-2", label: "standard-2 · 1 vCPU / 6 GiB"),
+        CloudMachineType(id: "standard-3", label: "standard-3 · 2 vCPU / 8 GiB"),
+        CloudMachineType(id: "standard-4", label: "standard-4 · 4 vCPU / 12 GiB"),
+    ]
+
+    /// The default machine type (`standard-1`).
+    static let `default`: CloudMachineType = all.first { $0.isDefault } ?? all[2]
+}
+
+// MARK: - Response envelopes
+
+struct CloudMeResponse: Decodable {
+    let user: CloudUser
+    let balance: CloudBalance
+}
+
+struct CloudInstancesResponse: Decodable {
+    let instances: [CloudInstance]
+}
+
+struct CloudInstanceResponse: Decodable {
+    let instance: CloudInstance
+}
+
+struct CloudInstallationsResponse: Decodable {
+    let installations: [CloudInstallation]
+}
+
+struct CloudReposResponse: Decodable {
+    let repositories: [CloudRepo]
+}
+
+struct CloudTopupResponse: Decodable {
+    let url: String
+}
+
+struct CloudOKResponse: Decodable {
+    let ok: Bool
+}
