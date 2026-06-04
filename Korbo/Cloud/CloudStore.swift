@@ -169,6 +169,12 @@ final class CloudStore: ObservableObject {
         try await client.repos(installationId: installationId)
     }
 
+    /// Public GitHub App install page so the user can grant Korbo access to a
+    /// repo (one-tap install + repo selection) without leaving for GitHub settings.
+    func installURL() async throws -> URL {
+        try await client.installURL()
+    }
+
     func topupURL(credits: Int) async throws -> URL {
         try await client.topupURL(credits: credits)
     }

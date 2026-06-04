@@ -74,6 +74,17 @@ actor KorboCloudClient {
         return response.repositories
     }
 
+    /// `GET /api/github/install-url` — public GitHub App install page (one-tap
+    /// install + repo selection). Lets the user grant the Korbo App access to a
+    /// repo without manually hunting for the App in GitHub settings.
+    func installURL() async throws -> URL {
+        let response: CloudTopupResponse = try await request("/api/github/install-url", method: .get)
+        guard let url = URL(string: response.url) else {
+            throw CloudError.http(200, "Malformed install URL: \(response.url)")
+        }
+        return url
+    }
+
     /// `POST /api/credits/topup` — returns a checkout URL.
     func topupURL(credits: Int) async throws -> URL {
         let response: CloudTopupResponse = try await request(

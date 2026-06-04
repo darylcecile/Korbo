@@ -143,6 +143,11 @@ private struct InstanceRow: View {
                 Text(reason)
                     .font(.caption)
                     .foregroundStyle(Theme.removed)
+            } else if let warning = cloneWarning {
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Theme.removed)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             actionRow
             if showDetails { detailsBlock }
@@ -269,6 +274,15 @@ private struct InstanceRow: View {
 
     private var isBlocked: Bool { instance.state.isTerminal }
 
+    /// A non-fatal clone failure surfaced by the backend as the ready instance's
+    /// `reason` (e.g. repo not found, or the Korbo GitHub App isn't installed on
+    /// the owner). Shown as a warning so the empty workspace isn't a mystery.
+    private var cloneWarning: String? {
+        guard let reason = instance.reason, reason.hasPrefix("repo_clone_failed") else { return nil }
+        let cleaned = reason.replacingOccurrences(of: "repo_clone_failed: ", with: "")
+        return cleaned == reason ? reason : cleaned
+    }
+
     private var canConnect: Bool { !cloud.isBusy && !isBlocked }
 
     // MARK: Actions
@@ -296,6 +310,7 @@ private struct InstanceRow: View {
 private struct SpawnInstanceSheet: View {
     @EnvironmentObject private var cloud: CloudStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     /// Source of the repository the new instance is bound to.
     private enum RepoMode: String, CaseIterable, Identifiable {
@@ -319,6 +334,7 @@ private struct SpawnInstanceSheet: View {
     @State private var loadingInstallations = false
     @State private var loadingRepos = false
     @State private var creating = false
+    @State private var openingInstall = false
     @State private var localError: String?
 
     private static let manualRepoPattern = #"^[\w.-]+/[\w.-]+$"#
@@ -386,19 +402,26 @@ private struct SpawnInstanceSheet: View {
     @ViewBuilder
     private var githubRepoPicker: some View {
         if installations.isEmpty {
-            Button {
-                loadInstallations()
-            } label: {
-                HStack {
-                    Text("Load repos")
-                    if loadingInstallations {
-                        Spacer()
-                        ProgressView().controlSize(.mini)
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    loadInstallations()
+                } label: {
+                    HStack {
+                        Text("Load repos")
+                        if loadingInstallations {
+                            Spacer()
+                            ProgressView().controlSize(.mini)
+                        }
                     }
                 }
+                .disabled(loadingInstallations || openingInstall)
+                .tint(Theme.accent)
+
+                installAppButton
+                Text("Private repos need the Korbo GitHub App installed on the owner. Installing lets you pick exactly which repos Korbo can access.")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textSecondary)
             }
-            .disabled(loadingInstallations)
-            .tint(Theme.accent)
         } else {
             Picker("Account", selection: Binding(
                 get: { selectedInstallation },
@@ -438,7 +461,30 @@ private struct SpawnInstanceSheet: View {
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
             }
+
+            // Always offer the install/manage link so a missing repo can be
+            // granted access without leaving for GitHub settings manually.
+            installAppButton
         }
+    }
+
+    /// One-tap deep link to the Korbo GitHub App's install/configure page. Since
+    /// GitHub requires explicit owner consent, this is the closest to "automatic"
+    /// we can offer — and on return the new installation self-resolves at spawn.
+    private var installAppButton: some View {
+        Button {
+            openInstall()
+        } label: {
+            HStack {
+                Label("Install / manage GitHub App", systemImage: "arrow.up.forward.app")
+                if openingInstall {
+                    Spacer()
+                    ProgressView().controlSize(.mini)
+                }
+            }
+        }
+        .disabled(openingInstall)
+        .tint(Theme.accent)
     }
 
     private var manualRepoField: some View {
@@ -494,12 +540,28 @@ private struct SpawnInstanceSheet: View {
             do {
                 installations = try await cloud.installations()
                 if installations.isEmpty {
-                    localError = "No GitHub installations. Enter a repo manually instead."
+                    localError = "No GitHub installations yet. Install the Korbo GitHub App, or enter a repo manually."
                 }
             } catch {
                 localError = (error as? CloudError)?.errorDescription ?? error.localizedDescription
             }
             loadingInstallations = false
+        }
+    }
+
+    /// Open the Korbo GitHub App install page. After the user grants access and
+    /// returns, re-load installations so the freshly-granted repos appear.
+    private func openInstall() {
+        openingInstall = true
+        localError = nil
+        Task {
+            defer { openingInstall = false }
+            do {
+                let url = try await cloud.installURL()
+                openURL(url)
+            } catch {
+                localError = (error as? CloudError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 
