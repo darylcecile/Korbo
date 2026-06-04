@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var cloud: CloudStore
     /// Observed so an accent/theme change re-resolves every static `Theme.*`
     /// color across the whole tree (see `.id` below), not just views that
     /// happen to observe the store.
@@ -36,6 +37,13 @@ struct RootView: View {
             .sheet(isPresented: $app.showConnectionSheet) {
                 ConnectionSheet()
                     .environmentObject(store)
+                    .environmentObject(app)
+            }
+            .sheet(isPresented: $app.showCloudSheet) {
+                CloudDashboardView()
+                    .environmentObject(app)
+                    .environmentObject(store)
+                    .environmentObject(cloud)
             }
             .sheet(isPresented: $app.showSettingsSheet) {
                 SettingsView()

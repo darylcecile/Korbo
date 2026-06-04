@@ -8,6 +8,8 @@ final class AppModel: ObservableObject {
     @Published var rightTab: RightTab = .git
     @Published var showConnectionSheet = false
     @Published var showSettingsSheet = false
+    /// Korbo Cloud management sheet (sign-in + provisioned instances).
+    @Published var showCloudSheet = false
 
     /// Which view occupies the wide center column. The terminal and file viewer
     /// both live in the centre pane (toggled from toolbar/actions) so they get

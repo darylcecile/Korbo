@@ -5,6 +5,7 @@ import SwiftUI
 /// (stored in the Keychain), and connect.
 struct ConnectionSheet: View {
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
@@ -18,6 +19,22 @@ struct ConnectionSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Korbo Cloud") {
+                    Button {
+                        // Hand off to the cloud sheet; close this one first so the
+                        // two sheets (both anchored to the root) don't collide.
+                        app.showConnectionSheet = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            app.showCloudSheet = true
+                        }
+                    } label: {
+                        Label("Manage Korbo Cloud…", systemImage: "cloud")
+                    }
+                    Text("Sign in to run opencode on a provisioned cloud instance — no server setup required.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Server") {
                     TextField("Name", text: $name)
                     TextField("URL (e.g. korbo.app:4096)", text: $urlString)
