@@ -84,10 +84,17 @@ enum CloudInstanceState: String, Codable, Hashable, CaseIterable {
     }
 
     /// The instance has reached a terminal state and will not become ready
-    /// without further action.
+    /// without further action. NOTE: `.suspended` is intentionally NOT terminal —
+    /// an out-of-credits instance retains its workspace + session snapshot and
+    /// becomes ready again once the user tops up and reconnects (the proxy
+    /// triggers a server-side resume).
     var isTerminal: Bool {
-        self == .suspended || self == .error || self == .terminated
+        self == .error || self == .terminated
     }
+
+    /// Out of credits but recoverable: workspace + conversation are retained for
+    /// a retention window. Top up + Connect resumes it.
+    var isSuspended: Bool { self == .suspended }
 
     /// Human-friendly label for the state.
     var displayLabel: String {
@@ -115,9 +122,12 @@ struct CloudInstance: Codable, Hashable, Identifiable {
     let reason: String?
     let createdAt: Date?
     let expiresAt: Date?
+    /// Suspended-retention deadline: after this the retained workspace + snapshot
+    /// are reclaimed. Present only while suspended-recoverable; `nil` otherwise.
+    let purgeAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, machineType, state, repo, reason, createdAt, expiresAt
+        case id, machineType, state, repo, reason, createdAt, expiresAt, purgeAt
     }
 
     init(
@@ -127,7 +137,8 @@ struct CloudInstance: Codable, Hashable, Identifiable {
         repo: String?,
         reason: String?,
         createdAt: Date?,
-        expiresAt: Date?
+        expiresAt: Date?,
+        purgeAt: Date? = nil
     ) {
         self.id = id
         self.machineType = machineType
@@ -136,6 +147,7 @@ struct CloudInstance: Codable, Hashable, Identifiable {
         self.reason = reason
         self.createdAt = createdAt
         self.expiresAt = expiresAt
+        self.purgeAt = purgeAt
     }
 
     init(from decoder: Decoder) throws {
@@ -147,6 +159,7 @@ struct CloudInstance: Codable, Hashable, Identifiable {
         reason = try c.decodeIfPresent(String.self, forKey: .reason)
         createdAt = (try c.decodeIfPresent(String.self, forKey: .createdAt)).flatMap(parseISO8601)
         expiresAt = (try c.decodeIfPresent(String.self, forKey: .expiresAt)).flatMap(parseISO8601)
+        purgeAt = (try c.decodeIfPresent(String.self, forKey: .purgeAt)).flatMap(parseISO8601)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -159,6 +172,7 @@ struct CloudInstance: Codable, Hashable, Identifiable {
         let formatter = ISO8601DateFormatter()
         try c.encodeIfPresent(createdAt.map(formatter.string(from:)), forKey: .createdAt)
         try c.encodeIfPresent(expiresAt.map(formatter.string(from:)), forKey: .expiresAt)
+        try c.encodeIfPresent(purgeAt.map(formatter.string(from:)), forKey: .purgeAt)
     }
 }
 
@@ -169,11 +183,12 @@ struct CloudInstanceStateDetail: Codable, Hashable, Identifiable {
     let machineType: String
     let reason: String?
     let expiresAt: Date?
+    let purgeAt: Date?
     let creditsPerMinute: Double
     let balanceCredits: Double
 
     enum CodingKeys: String, CodingKey {
-        case id, state, machineType, reason, expiresAt, creditsPerMinute, balanceCredits
+        case id, state, machineType, reason, expiresAt, purgeAt, creditsPerMinute, balanceCredits
     }
 
     init(from decoder: Decoder) throws {
@@ -183,6 +198,7 @@ struct CloudInstanceStateDetail: Codable, Hashable, Identifiable {
         machineType = try c.decode(String.self, forKey: .machineType)
         reason = try c.decodeIfPresent(String.self, forKey: .reason)
         expiresAt = (try c.decodeIfPresent(String.self, forKey: .expiresAt)).flatMap(parseISO8601)
+        purgeAt = (try c.decodeIfPresent(String.self, forKey: .purgeAt)).flatMap(parseISO8601)
         creditsPerMinute = try c.decode(Double.self, forKey: .creditsPerMinute)
         balanceCredits = try c.decode(Double.self, forKey: .balanceCredits)
     }

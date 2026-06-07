@@ -120,9 +120,13 @@ struct CloudInstancesView: View {
 /// delete affordance (context menu).
 private struct InstanceRow: View {
     @EnvironmentObject private var cloud: CloudStore
+    @Environment(\.openURL) private var openURL
 
     let instance: CloudInstance
     let onDelete: () -> Void
+
+    /// Top-up amounts (in credits) offered when resuming a suspended instance.
+    private let topupAmounts = [1000, 5000, 10000]
 
     @State private var showDetails = false
     @State private var detail: CloudInstanceStateDetail?
@@ -143,6 +147,8 @@ private struct InstanceRow: View {
                 Text(reason)
                     .font(.caption)
                     .foregroundStyle(Theme.removed)
+            } else if instance.state.isSuspended {
+                suspendedBanner
             } else if let warning = cloneWarning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -199,6 +205,41 @@ private struct InstanceRow: View {
             .background(Capsule().fill(pillColor.opacity(0.15)))
     }
 
+    /// Out-of-credits (suspended) affordance: the instance is recoverable — its
+    /// workspace + conversation are retained until `purgeAt`. Top up, then
+    /// Connect to resume right where it left off.
+    private var suspendedBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label {
+                Text(suspendedMessage)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "bolt.slash.fill")
+            }
+            .font(.caption)
+            .foregroundStyle(Theme.warning)
+
+            Menu {
+                ForEach(topupAmounts, id: \.self) { amount in
+                    Button("\(amount) credits") { buyCredits(amount) }
+                }
+            } label: {
+                Label("Buy credits to resume", systemImage: "creditcard")
+                    .font(.caption.weight(.semibold))
+            }
+            .disabled(cloud.isBusy)
+        }
+    }
+
+    private var suspendedMessage: String {
+        if let purge = instance.purgeAt {
+            return "Out of credits. Your workspace and conversation are saved until "
+                + purge.formatted(date: .abbreviated, time: .shortened)
+                + ". Top up, then Connect to resume."
+        }
+        return "Out of credits. Top up, then Connect to resume where you left off."
+    }
+
     private var actionRow: some View {
         HStack(spacing: 12) {
             Button {
@@ -244,6 +285,9 @@ private struct InstanceRow: View {
                 if let expires = detail.expiresAt {
                     detailRow("Expires", expires.formatted(date: .abbreviated, time: .shortened))
                 }
+                if let purge = detail.purgeAt {
+                    detailRow("Recoverable until", purge.formatted(date: .abbreviated, time: .shortened))
+                }
             }
             .padding(.top, 2)
         } else if !loadingDetail {
@@ -267,6 +311,7 @@ private struct InstanceRow: View {
     private var pillColor: Color {
         let state = instance.state
         if state.isReady { return Theme.added }
+        if state.isSuspended { return Theme.warning }
         if state.isTerminal { return Theme.removed }
         if state.isTransitional { return Theme.accent }
         return Theme.textSecondary
@@ -298,6 +343,14 @@ private struct InstanceRow: View {
         Task {
             detail = try? await cloud.instanceState(instance.id)
             loadingDetail = false
+        }
+    }
+
+    private func buyCredits(_ amount: Int) {
+        Task {
+            if let url = try? await cloud.topupURL(credits: amount) {
+                openURL(url)
+            }
         }
     }
 }
