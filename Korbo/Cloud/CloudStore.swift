@@ -20,6 +20,24 @@ final class CloudStore: ObservableObject {
     @Published private(set) var isBusy: Bool = false
     @Published var lastError: String?
 
+    /// A one-shot, user-dismissable notice about how the workspace was restored
+    /// on the instance we just connected to (e.g. it was re-cloned from origin
+    /// because no snapshot was available, so local-only edits weren't carried
+    /// over). `nil` when there's nothing noteworthy to surface.
+    @Published var workspaceNotice: WorkspaceNotice?
+
+    /// Why the connected instance's workspace differs from what the user may
+    /// expect after a resume. Surfaced as a dismissable banner.
+    enum WorkspaceNotice: Equatable {
+        /// No snapshot was available, so the repo was freshly re-cloned from
+        /// origin. Any uncommitted local-only files from before the last sleep
+        /// are gone.
+        case reclonedFromOrigin
+        /// The workspace was restored faithfully, but from a snapshot that may
+        /// predate the user's most recent edits (a prior suspend couldn't snapshot).
+        case restoredStale
+    }
+
     // MARK: Collaborators
 
     private let tokenStore: CloudTokenStore
@@ -120,6 +138,7 @@ final class CloudStore: ObservableObject {
         balance = nil
         instances = []
         lastError = nil
+        workspaceNotice = nil
     }
 
     // MARK: - Refresh
@@ -199,6 +218,7 @@ final class CloudStore: ObservableObject {
 
         isBusy = true
         lastError = nil
+        workspaceNotice = nil
         defer { isBusy = false }
 
         if instance.state.isTransitional {
@@ -219,6 +239,40 @@ final class CloudStore: ObservableObject {
         )
         korbo.servers.save(config, secret: token)
         await korbo.connect()
+
+        // Surface how the workspace was materialized (e.g. re-cloned from origin
+        // on a resume with no snapshot). Best-effort and off the connect path so
+        // it never delays or fails the connection itself.
+        let instanceID = instance.id
+        Task { [weak self] in await self?.evaluateWorkspaceRestore(instanceID) }
+    }
+
+    /// Poll the instance state briefly until it reports ready, then translate the
+    /// backend's `workspaceRestore` / `workspaceRestoreStale` signal into a
+    /// user-facing `workspaceNotice`. Entirely best-effort: any error or timeout
+    /// simply leaves the notice unset.
+    private func evaluateWorkspaceRestore(_ id: String) async {
+        let deadline = Date().addingTimeInterval(readinessTimeout)
+        while Date() < deadline {
+            guard let detail = try? await client.instanceState(id) else { return }
+            if detail.state.isReady {
+                if detail.workspaceRestoreStale {
+                    workspaceNotice = .restoredStale
+                } else if detail.workspaceRestore == .reclone {
+                    workspaceNotice = .reclonedFromOrigin
+                } else {
+                    workspaceNotice = nil
+                }
+                return
+            }
+            if detail.state.isTerminal { return }
+            try? await Task.sleep(nanoseconds: readinessPollInterval)
+        }
+    }
+
+    /// Dismiss the workspace-restore notice (user tapped the banner's close).
+    func dismissWorkspaceNotice() {
+        workspaceNotice = nil
     }
 
     /// Poll `instanceState` every ~2s until the instance reports ready, throwing

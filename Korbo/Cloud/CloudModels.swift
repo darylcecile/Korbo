@@ -176,6 +176,20 @@ struct CloudInstance: Codable, Hashable, Identifiable {
     }
 }
 
+/// How an instance's `/workspace` was materialized on its most recent resume.
+/// Only meaningful when the owning state is `.ready` (the backend clears this at
+/// every resume start and re-sets it per materialization, so it is never stale
+/// for the current ready window). `null` on a fresh provision.
+enum WorkspaceRestore: String, Codable, Hashable {
+    /// Restored verbatim from the R2 whole-workspace snapshot (full fidelity).
+    case full
+    /// No usable snapshot — the base repo was re-cloned from origin, so any
+    /// local-only edits made before the last sleep were NOT carried over.
+    case reclone
+    /// Nothing to restore and no repo to clone — started from an empty tree.
+    case empty
+}
+
 /// Detailed runtime state for a single instance (`GET /api/instances/:id/state`).
 struct CloudInstanceStateDetail: Codable, Hashable, Identifiable {
     let id: String
@@ -186,9 +200,17 @@ struct CloudInstanceStateDetail: Codable, Hashable, Identifiable {
     let purgeAt: Date?
     let creditsPerMinute: Double
     let balanceCredits: Double
+    /// How `/workspace` was materialized on the latest resume (see
+    /// `WorkspaceRestore`). Only interpret when `state == .ready`.
+    let workspaceRestore: WorkspaceRestore?
+    /// True when the restored tree is a faithful `full` restore of a snapshot
+    /// that is older than suspend-time work (a prior suspend couldn't snapshot),
+    /// so the contents may be slightly behind the user's last edits.
+    let workspaceRestoreStale: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, state, machineType, reason, expiresAt, purgeAt, creditsPerMinute, balanceCredits
+        case workspaceRestore, workspaceRestoreStale
     }
 
     init(from decoder: Decoder) throws {
@@ -201,6 +223,11 @@ struct CloudInstanceStateDetail: Codable, Hashable, Identifiable {
         purgeAt = (try c.decodeIfPresent(String.self, forKey: .purgeAt)).flatMap(parseISO8601)
         creditsPerMinute = try c.decode(Double.self, forKey: .creditsPerMinute)
         balanceCredits = try c.decode(Double.self, forKey: .balanceCredits)
+        // Tolerate an unknown/absent restore enum (forward-compat with new
+        // backend values) by mapping anything unrecognized to nil.
+        workspaceRestore = (try c.decodeIfPresent(String.self, forKey: .workspaceRestore))
+            .flatMap(WorkspaceRestore.init(rawValue:))
+        workspaceRestoreStale = (try c.decodeIfPresent(Bool.self, forKey: .workspaceRestoreStale)) ?? false
     }
 }
 
