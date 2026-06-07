@@ -77,6 +77,10 @@ final class KorboStore: ObservableObject {
     @Published private(set) var vcsInfo: OCVcsInfo?
     @Published private(set) var gitFiles: [OCVcsFileDiff] = []
     @Published private(set) var isLoadingGit = false
+    /// True when the last diff fetch failed (e.g. timed out) rather than returning
+    /// an empty (genuinely-clean) result. Lets the Git panel show an error/retry
+    /// state instead of a misleading "clean" when the request couldn't complete.
+    @Published private(set) var gitLoadFailed = false
     /// Which diff the Git panel shows. Setting it reloads via `loadGit()`.
     @Published var gitMode: GitMode = .working
 
@@ -209,6 +213,7 @@ final class KorboStore: ObservableObject {
         pendingQuestions.removeAll()
         vcsInfo = nil
         gitFiles = []
+        gitLoadFailed = false
         fileChildren = [:]
         expandedDirs = []
         loadingDirs = []
@@ -633,22 +638,31 @@ final class KorboStore: ObservableObject {
     // MARK: - Git / VCS
 
     /// Refresh the Git panel: branch info plus the changed files for the current
-    /// `gitMode`. Failures are surfaced via `lastError` but leave prior data intact
-    /// (a transient diff error shouldn't blank the panel).
+    /// `gitMode`. Branch info is best-effort (fast); the diff is the heavy call and
+    /// is tracked explicitly so a failure (commonly a timeout on s3fs-backed cloud
+    /// workspaces, where opencode's per-file patch build can take 60s+) surfaces as
+    /// `gitLoadFailed` rather than silently leaving the panel looking "clean". Prior
+    /// diff data is left intact on failure so a transient error doesn't blank it.
     func loadGit() async {
         guard let client else { return }
         isLoadingGit = true
         defer { isLoadingGit = false }
         let mode = gitMode
+        // Branch info runs concurrently with the (long-poll) diff fetch.
         async let infoResult = try? client.vcsInfo()
-        async let filesResult = try? client.vcsDiff(mode: mode.query)
+        let diffResult: Result<[OCVcsFileDiff], Error>
+        do { diffResult = .success(try await client.vcsDiff(mode: mode.query)) }
+        catch { diffResult = .failure(error) }
         let info = await infoResult
-        let files = await filesResult
         if let info { vcsInfo = info }
-        // Only replace the file list if the request succeeded and the mode is still
-        // current (the user may have toggled while the request was in flight).
-        if let files, mode == gitMode {
+        // Ignore a result for a mode the user has since toggled away from.
+        guard mode == gitMode else { return }
+        switch diffResult {
+        case .success(let files):
             gitFiles = files
+            gitLoadFailed = false
+        case .failure:
+            gitLoadFailed = true
         }
     }
 
@@ -657,6 +671,7 @@ final class KorboStore: ObservableObject {
         guard mode != gitMode else { return }
         gitMode = mode
         gitFiles = []
+        gitLoadFailed = false
         await loadGit()
     }
 

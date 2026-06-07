@@ -35,6 +35,14 @@ actor OpencodeClient {
     /// worktree). `nil` uses the server's default/current project.
     let directory: String?
     private let session: URLSession
+    /// Separate transport with a much longer timeout for the heavy `/vcs/diff`
+    /// call. On s3fs-backed cloud workspaces opencode builds a full unified patch
+    /// per file by reading blobs from `.git/objects` over the R2 FUSE mount, which
+    /// can take 60s+ — far beyond the default 20s request timeout. Routing only the
+    /// diff through this session lets the Git panel populate while every other call
+    /// still fails fast. (Harmless once the backend serves the workspace from local
+    /// disk: fast responses return well under the ceiling.)
+    private let diffSession: URLSession
     private let decoder: JSONDecoder
 
     init(config: ServerConfig, directory: String? = nil, session: URLSession? = nil) {
@@ -42,11 +50,17 @@ actor OpencodeClient {
         self.directory = directory
         if let session {
             self.session = session
+            self.diffSession = session
         } else {
             let cfg = URLSessionConfiguration.default
             cfg.timeoutIntervalForRequest = 20
             cfg.waitsForConnectivity = false
             self.session = URLSession(configuration: cfg)
+
+            let diffCfg = URLSessionConfiguration.default
+            diffCfg.timeoutIntervalForRequest = 120
+            diffCfg.waitsForConnectivity = false
+            self.diffSession = URLSession(configuration: diffCfg)
         }
         self.decoder = JSONDecoder()
     }
@@ -127,8 +141,9 @@ actor OpencodeClient {
 
     /// `GET /vcs/diff?mode=git|branch` — per-file diffs (status, ±counts, patch).
     /// `git` = uncommitted working-tree changes; `branch` = this branch vs its base.
+    /// Routed through `diffSession` (extended timeout) — see its declaration.
     func vcsDiff(mode: String) async throws -> [OCVcsFileDiff] {
-        try await getJSON("/vcs/diff?mode=\(mode)")
+        try await getJSON("/vcs/diff?mode=\(mode)", transport: diffSession)
     }
 
     // MARK: - Files (read-only)
@@ -393,8 +408,8 @@ actor OpencodeClient {
 
     enum Method: String { case get = "GET", post = "POST", patch = "PATCH", delete = "DELETE", put = "PUT" }
 
-    private func getJSON<T: Decodable>(_ path: String) async throws -> T {
-        let (data, _) = try await raw(.get, path)
+    private func getJSON<T: Decodable>(_ path: String, transport: URLSession? = nil) async throws -> T {
+        let (data, _) = try await raw(.get, path, transport: transport)
         do { return try decoder.decode(T.self, from: data) }
         catch { throw OpencodeError.decoding(error) }
     }
@@ -406,7 +421,8 @@ actor OpencodeClient {
     }
 
     @discardableResult
-    private func raw(_ method: Method, _ path: String, body: Data? = nil) async throws -> (Data, URLResponse) {
+    private func raw(_ method: Method, _ path: String, body: Data? = nil,
+                     transport: URLSession? = nil) async throws -> (Data, URLResponse) {
         guard let url = makeURL(path) else { throw OpencodeError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
@@ -416,7 +432,7 @@ actor OpencodeClient {
 
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await (transport ?? session).data(for: request)
         } catch {
             throw OpencodeError.transport(error)
         }
