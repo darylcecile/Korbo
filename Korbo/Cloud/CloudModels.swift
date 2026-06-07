@@ -176,6 +176,17 @@ struct CloudInstance: Codable, Hashable, Identifiable {
     }
 }
 
+extension CloudInstance {
+    /// Short, human-friendly label for the instance: the repo (`owner/name`) when
+    /// known, otherwise a truncated instance id. Used by the instance switcher,
+    /// command palette, and the saved `ServerConfig` name so users never have to
+    /// read a raw instance id.
+    var displayName: String {
+        let trimmed = repo?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Instance \(id.suffix(6))" : trimmed
+    }
+}
+
 /// How an instance's `/workspace` was materialized on its most recent resume.
 /// Only meaningful when the owning state is `.ready` (the backend clears this at
 /// every resume start and re-sets it per materialization, so it is never stale

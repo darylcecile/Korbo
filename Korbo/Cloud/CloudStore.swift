@@ -215,6 +215,17 @@ final class CloudStore: ObservableObject {
             lastError = CloudError.notSignedIn.errorDescription
             return
         }
+        // Ignore re-entrant requests (e.g. a second tap from the picker while a
+        // connect from the command palette is already in flight) so concurrent
+        // switches can't race to a nondeterministic final server selection.
+        guard !isBusy else { return }
+        // Dead instances can never become reachable; surface a clear error rather
+        // than spinning through `waitUntilReady` to an inevitable timeout. (Call
+        // sites other than the dashboard — picker, palette — don't pre-gate this.)
+        guard !instance.state.isTerminal else {
+            lastError = instance.reason ?? "Instance is \(instance.state.displayLabel.lowercased()) and can't be connected."
+            return
+        }
 
         isBusy = true
         lastError = nil
@@ -233,7 +244,7 @@ final class CloudStore: ObservableObject {
         let serverID = stableServerID(for: instance.id)
         let config = ServerConfig(
             id: serverID,
-            name: "Cloud · \(instance.id)",
+            name: instance.displayName,
             baseURLString: CloudConfig.instanceBaseURLString(instance.id),
             authKind: .bearer
         )
@@ -305,6 +316,18 @@ final class CloudStore: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    /// The cloud instance backing the currently-selected opencode server, if any.
+    /// Derived from the active `ServerConfig.id` via the `instance → serverID`
+    /// map, so it stays correct no matter how the server was selected (instance
+    /// picker, command palette, or the footer server menu). Reactive in practice
+    /// because connecting flips `KorboStore.status`, which redraws observers.
+    var connectedInstance: CloudInstance? {
+        guard let serverID = korbo?.servers.selectedServerID?.uuidString,
+              let instanceID = serverIDByInstance.first(where: { $0.value == serverID })?.key
+        else { return nil }
+        return instances.first { $0.id == instanceID }
+    }
 
     /// Return a stable `ServerConfig.id` for an instance, persisting newly
     /// minted UUIDs so the Keychain bearer entry is reused across reconnects.
