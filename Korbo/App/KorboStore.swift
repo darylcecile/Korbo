@@ -77,6 +77,10 @@ final class KorboStore: ObservableObject {
     @Published private(set) var vcsInfo: OCVcsInfo?
     @Published private(set) var gitFiles: [OCVcsFileDiff] = []
     @Published private(set) var isLoadingGit = false
+    /// True when the last diff fetch failed (e.g. timed out) rather than returning
+    /// an empty (genuinely-clean) result. Lets the Git panel show an error/retry
+    /// state instead of a misleading "clean" when the request couldn't complete.
+    @Published private(set) var gitLoadFailed = false
     /// Which diff the Git panel shows. Setting it reloads via `loadGit()`.
     @Published var gitMode: GitMode = .working
 
@@ -146,6 +150,7 @@ final class KorboStore: ObservableObject {
     private var client: OpencodeClient?
     private var eventTask: Task<Void, Never>?
     private var fileSearchTask: Task<Void, Never>?
+    private var fileReloadTask: Task<Void, Never>?
 
     init(servers: ServerStore? = nil) {
         self.servers = servers ?? ServerStore()
@@ -208,6 +213,7 @@ final class KorboStore: ObservableObject {
         pendingQuestions.removeAll()
         vcsInfo = nil
         gitFiles = []
+        gitLoadFailed = false
         fileChildren = [:]
         expandedDirs = []
         loadingDirs = []
@@ -632,22 +638,31 @@ final class KorboStore: ObservableObject {
     // MARK: - Git / VCS
 
     /// Refresh the Git panel: branch info plus the changed files for the current
-    /// `gitMode`. Failures are surfaced via `lastError` but leave prior data intact
-    /// (a transient diff error shouldn't blank the panel).
+    /// `gitMode`. Branch info is best-effort (fast); the diff is the heavy call and
+    /// is tracked explicitly so a failure (commonly a timeout on s3fs-backed cloud
+    /// workspaces, where opencode's per-file patch build can take 60s+) surfaces as
+    /// `gitLoadFailed` rather than silently leaving the panel looking "clean". Prior
+    /// diff data is left intact on failure so a transient error doesn't blank it.
     func loadGit() async {
         guard let client else { return }
         isLoadingGit = true
         defer { isLoadingGit = false }
         let mode = gitMode
+        // Branch info runs concurrently with the (long-poll) diff fetch.
         async let infoResult = try? client.vcsInfo()
-        async let filesResult = try? client.vcsDiff(mode: mode.query)
+        let diffResult: Result<[OCVcsFileDiff], Error>
+        do { diffResult = .success(try await client.vcsDiff(mode: mode.query)) }
+        catch { diffResult = .failure(error) }
         let info = await infoResult
-        let files = await filesResult
         if let info { vcsInfo = info }
-        // Only replace the file list if the request succeeded and the mode is still
-        // current (the user may have toggled while the request was in flight).
-        if let files, mode == gitMode {
+        // Ignore a result for a mode the user has since toggled away from.
+        guard mode == gitMode else { return }
+        switch diffResult {
+        case .success(let files):
             gitFiles = files
+            gitLoadFailed = false
+        case .failure:
+            gitLoadFailed = true
         }
     }
 
@@ -656,6 +671,7 @@ final class KorboStore: ObservableObject {
         guard mode != gitMode else { return }
         gitMode = mode
         gitFiles = []
+        gitLoadFailed = false
         await loadGit()
     }
 
@@ -688,6 +704,41 @@ final class KorboStore: ObservableObject {
         } else {
             expandedDirs.insert(path)
             if fileChildren[path] == nil { await loadDir(path) }
+        }
+    }
+
+    /// Manual Files-tab refresh: ensure the root is loaded, then re-fetch every
+    /// directory currently shown so new/removed files surface immediately.
+    func refreshFiles() async {
+        if fileChildren["."] == nil {
+            await loadFileRootIfNeeded()
+        } else {
+            await reloadLoadedDirs()
+        }
+    }
+
+    /// Re-fetch every directory currently loaded in the tree (preserving the
+    /// expansion state) so files the agent creates/deletes appear without a
+    /// reconnect. opencode's `/file` listing is live; the app previously cached
+    /// the root forever, so writes never surfaced. Background refresh: listing
+    /// failures are swallowed (a transient error shouldn't blank the tree or
+    /// raise an alert — the prior contents stay put).
+    func reloadLoadedDirs() async {
+        guard let client else { return }
+        for path in Array(fileChildren.keys) {
+            guard let nodes = try? await client.listFiles(path: path) else { continue }
+            fileChildren[path] = sortNodes(nodes)
+        }
+    }
+
+    /// Debounced tree refresh driven by `file.edited` SSE events, which can
+    /// arrive in bursts while the agent edits many files in one run.
+    func scheduleFilesReload() {
+        fileReloadTask?.cancel()
+        fileReloadTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.reloadLoadedDirs()
         }
     }
 
@@ -1487,7 +1538,12 @@ final class KorboStore: ObservableObject {
             }
         case .serverConnected:
             break // handled in later milestones
-        case .fileEdited, .vcsBranchUpdated, .sessionDiff:
+        case .fileEdited:
+            // A file changed on disk — refresh both the Git panel and the file
+            // tree (the tree caches loaded dirs, so it needs an explicit reload).
+            Task { [weak self] in await self?.loadGit() }
+            scheduleFilesReload()
+        case .vcsBranchUpdated, .sessionDiff:
             // The working tree or branch changed — refresh the Git panel.
             Task { [weak self] in await self?.loadGit() }
         }

@@ -133,6 +133,27 @@ struct GitPane: View {
                 Text("Loading changes…")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.textTertiary)
+            } else if store.gitLoadFailed {
+                Image(systemName: "exclamationmark.arrow.circlepath")
+                    .font(.system(size: 30))
+                    .foregroundStyle(Theme.textTertiary)
+                    .accessibilityHidden(true)
+                Text("Couldn’t load changes")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                Text("The diff request timed out. This can happen on large or busy cloud workspaces.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+                    .multilineTextAlignment(.center)
+                Button {
+                    Task { await store.loadGit() }
+                } label: {
+                    Text("Retry")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             } else {
                 Image(systemName: "checkmark.circle")
                     .font(.system(size: 30))

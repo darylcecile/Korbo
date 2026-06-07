@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var cloud: CloudStore
     /// Observed so an accent/theme change re-resolves every static `Theme.*`
     /// color across the whole tree (see `.id` below), not just views that
     /// happen to observe the store.
@@ -17,6 +18,8 @@ struct RootView: View {
                 baseLayout(mode, width: geo.size.width)
                 drawerOverlays(mode, width: geo.size.width)
                 ConnectionBanner()
+                    .zIndex(8)
+                WorkspaceNoticeBanner()
                     .zIndex(8)
                 if app.showCommandPalette {
                     CommandPalette()
@@ -36,6 +39,13 @@ struct RootView: View {
             .sheet(isPresented: $app.showConnectionSheet) {
                 ConnectionSheet()
                     .environmentObject(store)
+                    .environmentObject(app)
+            }
+            .sheet(isPresented: $app.showCloudSheet) {
+                CloudDashboardView()
+                    .environmentObject(app)
+                    .environmentObject(store)
+                    .environmentObject(cloud)
             }
             .sheet(isPresented: $app.showSettingsSheet) {
                 SettingsView()
@@ -227,6 +237,80 @@ private struct ConnectionBanner: View {
         switch store.status {
         case .failed, .disconnected: return true
         case .connecting, .connected: return false
+        }
+    }
+}
+
+/// A thin, dismissable top banner that explains how the connected cloud
+/// instance's workspace was restored on resume — e.g. it was re-cloned from
+/// origin (so local-only edits weren't carried over), or restored from a
+/// possibly-stale snapshot. Only shown while connected and when the cloud store
+/// has flagged something worth surfacing.
+private struct WorkspaceNoticeBanner: View {
+    @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var cloud: CloudStore
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if store.status.isConnected, let notice = cloud.workspaceNotice {
+                banner(notice)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                Spacer(minLength: 0)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: cloud.workspaceNotice)
+        .animation(.easeInOut(duration: 0.2), value: store.status)
+    }
+
+    private func banner(_ notice: CloudStore.WorkspaceNotice) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon(notice))
+                .foregroundStyle(Theme.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title(notice))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(detail(notice))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button {
+                cloud.dismissWorkspaceNotice()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) { Divider().overlay(Theme.border) }
+    }
+
+    private func icon(_ notice: CloudStore.WorkspaceNotice) -> String {
+        switch notice {
+        case .reclonedFromOrigin: return "arrow.triangle.2.circlepath"
+        case .restoredStale:      return "clock.arrow.circlepath"
+        }
+    }
+
+    private func title(_ notice: CloudStore.WorkspaceNotice) -> String {
+        switch notice {
+        case .reclonedFromOrigin: return "Workspace re-cloned from origin"
+        case .restoredStale:      return "Workspace may be slightly out of date"
+        }
+    }
+
+    private func detail(_ notice: CloudStore.WorkspaceNotice) -> String {
+        switch notice {
+        case .reclonedFromOrigin:
+            return "No snapshot was available, so files were pulled fresh from GitHub. Uncommitted local-only changes from before the last sleep weren't restored."
+        case .restoredStale:
+            return "Restored from a snapshot that may predate your most recent edits."
         }
     }
 }

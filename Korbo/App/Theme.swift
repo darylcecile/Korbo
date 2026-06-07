@@ -17,6 +17,7 @@ enum Theme {
     static let textTertiary = Color(hex: 0x6A6A72)
     static let added = Color(hex: 0x4CAF7D)
     static let removed = Color(hex: 0xD15B5B)
+    static let warning = Color(hex: 0xD9A441)
 }
 
 extension Color {
