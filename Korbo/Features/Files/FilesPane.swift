@@ -47,6 +47,13 @@ struct FilesPane: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
             }
+            Button { Task { await store.refreshFiles() } } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Refresh files")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

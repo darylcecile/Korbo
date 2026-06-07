@@ -146,6 +146,7 @@ final class KorboStore: ObservableObject {
     private var client: OpencodeClient?
     private var eventTask: Task<Void, Never>?
     private var fileSearchTask: Task<Void, Never>?
+    private var fileReloadTask: Task<Void, Never>?
 
     init(servers: ServerStore? = nil) {
         self.servers = servers ?? ServerStore()
@@ -688,6 +689,41 @@ final class KorboStore: ObservableObject {
         } else {
             expandedDirs.insert(path)
             if fileChildren[path] == nil { await loadDir(path) }
+        }
+    }
+
+    /// Manual Files-tab refresh: ensure the root is loaded, then re-fetch every
+    /// directory currently shown so new/removed files surface immediately.
+    func refreshFiles() async {
+        if fileChildren["."] == nil {
+            await loadFileRootIfNeeded()
+        } else {
+            await reloadLoadedDirs()
+        }
+    }
+
+    /// Re-fetch every directory currently loaded in the tree (preserving the
+    /// expansion state) so files the agent creates/deletes appear without a
+    /// reconnect. opencode's `/file` listing is live; the app previously cached
+    /// the root forever, so writes never surfaced. Background refresh: listing
+    /// failures are swallowed (a transient error shouldn't blank the tree or
+    /// raise an alert — the prior contents stay put).
+    func reloadLoadedDirs() async {
+        guard let client else { return }
+        for path in Array(fileChildren.keys) {
+            guard let nodes = try? await client.listFiles(path: path) else { continue }
+            fileChildren[path] = sortNodes(nodes)
+        }
+    }
+
+    /// Debounced tree refresh driven by `file.edited` SSE events, which can
+    /// arrive in bursts while the agent edits many files in one run.
+    func scheduleFilesReload() {
+        fileReloadTask?.cancel()
+        fileReloadTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.reloadLoadedDirs()
         }
     }
 
@@ -1487,7 +1523,12 @@ final class KorboStore: ObservableObject {
             }
         case .serverConnected:
             break // handled in later milestones
-        case .fileEdited, .vcsBranchUpdated, .sessionDiff:
+        case .fileEdited:
+            // A file changed on disk — refresh both the Git panel and the file
+            // tree (the tree caches loaded dirs, so it needs an explicit reload).
+            Task { [weak self] in await self?.loadGit() }
+            scheduleFilesReload()
+        case .vcsBranchUpdated, .sessionDiff:
             // The working tree or branch changed — refresh the Git panel.
             Task { [weak self] in await self?.loadGit() }
         }
