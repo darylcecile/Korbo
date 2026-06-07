@@ -2,7 +2,7 @@
 
 **An [opencode](https://github.com/anomalyco/opencode) client for iPad, built in SwiftUI.**
 
-<img width="2752" height="2064" alt="image" src="https://github.com/user-attachments/assets/ecb5568b-f6a6-4013-b98d-8b71aa8498a3" />
+<img width="2752" height="2064" alt="image" src="https://github.com/user-attachments/assets/bd37c2e0-b27f-4f39-ab24-fe730e96af2b" />
 
 
 Korbo is "[openchamber](https://github.com/openchamber/openchamber) for iPad" — a
