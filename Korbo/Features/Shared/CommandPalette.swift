@@ -16,6 +16,7 @@ private struct PaletteItem: Identifiable {
 struct CommandPalette: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var cloud: CloudStore
 
     @State private var query = ""
     @State private var selection = 0
@@ -160,6 +161,8 @@ struct CommandPalette: View {
         var out: [PaletteItem] = []
         out += actionItems.filter { q.isEmpty || $0.title.lowercased().contains(q) }
         out += sessionItems(q)
+        out += instanceItems(q)
+        out += projectItems(q)
         out += fileItems
         out += commandItems(q)
         return out
@@ -216,6 +219,60 @@ struct CommandPalette: View {
                 subtitle: session.projectName,
                 group: "Sessions"
             ) { perform { Task { await store.selectSession(session.id) } } }
+        }
+    }
+
+    /// Cloud-instance switcher entries. Lets the user jump to another provisioned
+    /// instance (labelled by repo) without leaving the keyboard. Matches on the
+    /// repo/id and the synthetic keyword "switch instance" so typing "switch" or
+    /// "instance" surfaces them. Only shown when signed into Cloud.
+    private func instanceItems(_ q: String) -> [PaletteItem] {
+        guard cloud.isSignedIn else { return [] }
+        let connectedID = cloud.connectedInstance?.id
+        let filtered = q.isEmpty
+            ? Array(cloud.instances.prefix(6))
+            : cloud.instances.filter {
+                $0.displayName.lowercased().contains(q)
+                    || ($0.repo ?? "").lowercased().contains(q)
+                    || $0.id.lowercased().contains(q)
+                    || "switch to instance".contains(q)
+            }
+        return filtered.prefix(8).map { instance in
+            let isConnected = instance.id == connectedID
+            return PaletteItem(
+                id: "inst-\(instance.id)",
+                icon: isConnected ? "cloud.fill" : "cloud",
+                title: "Switch to \(instance.displayName)",
+                subtitle: "\(instance.state.displayLabel) · \(instance.machineType)",
+                group: "Switch to instance"
+            ) { perform { Task { await cloud.connectToInstance(instance) } } }
+        }
+    }
+
+    /// Project switcher entries: a single opencode server can host several
+    /// projects (each an `?directory=` worktree). Lets the user re-scope sessions,
+    /// files and git to another project from the keyboard. Matches on name/path
+    /// and the synthetic keyword "switch project". Only on a local/LAN server (not
+    /// a single-workspace cloud instance) that exposes more than one project.
+    private func projectItems(_ q: String) -> [PaletteItem] {
+        guard cloud.connectedInstance == nil, store.projects.count > 1 else { return [] }
+        let selectedDir = store.selectedProjectDirectory
+        let filtered = q.isEmpty
+            ? Array(store.projects.prefix(6))
+            : store.projects.filter {
+                $0.name.lowercased().contains(q)
+                    || $0.scopeDirectory.lowercased().contains(q)
+                    || "switch project".contains(q)
+            }
+        return filtered.prefix(8).map { project in
+            let isSelected = project.scopeDirectory == selectedDir
+            return PaletteItem(
+                id: "proj-\(project.id)",
+                icon: isSelected ? "folder.fill" : "folder",
+                title: "Switch to \(project.name)",
+                subtitle: project.scopeDirectory,
+                group: "Switch project"
+            ) { perform { Task { await store.switchProject(to: project.scopeDirectory) } } }
         }
     }
 

@@ -56,10 +56,12 @@ final class KorboStore: ObservableObject {
     @Published private(set) var agents: [OCAgent] = []
     @Published private(set) var commands: [OCCommand] = []
     /// All projects the connected server hosts (`GET /project`). A server can
-    /// serve many; the user switches between them in the sessions sidebar.
+    /// serve many; the user switches between them from the sidebar / palette.
     @Published private(set) var projects: [OCProject] = []
     /// The active project's worktree directory, threaded onto every request as
-    /// `?directory=`. `nil` means the server's default/current project.
+    /// `?directory=`. `nil` means the server's default/current project. Treated
+    /// as a *display* hint too: after connecting to the default we adopt the
+    /// server's current-project directory so the switcher can highlight it.
     @Published private(set) var selectedProjectDirectory: String?
     @Published private(set) var isLoadingMessages = false
     @Published private(set) var isSummarizing = false
@@ -151,6 +153,11 @@ final class KorboStore: ObservableObject {
     private var eventTask: Task<Void, Never>?
     private var fileSearchTask: Task<Void, Never>?
     private var fileReloadTask: Task<Void, Never>?
+    /// Serializes connection operations (`connect`/`switchProject`). Because
+    /// `@MainActor` does not prevent interleaving across `await`, two overlapping
+    /// switches could otherwise clobber `client`, the event stream and the
+    /// persisted directory. Reentrant calls are dropped while one is in flight.
+    private var isReconnecting = false
 
     init(servers: ServerStore? = nil) {
         self.servers = servers ?? ServerStore()
@@ -166,24 +173,65 @@ final class KorboStore: ObservableObject {
     // MARK: - Connection lifecycle
 
     /// Probe health for the selected server, then load sessions and start the
-    /// event stream. Safe to call repeatedly (e.g. retry).
+    /// event stream. Safe to call repeatedly (e.g. retry). Restores the
+    /// per-server project directory and, if that saved directory is no longer
+    /// reachable, transparently falls back to the server's default project so a
+    /// stale selection can never lock the user out.
     func connect() async {
         guard let server = servers.selectedServer, server.baseURL != nil else {
             status = .failed("No server configured")
             return
         }
-        await teardown()
+        if isReconnecting { return }
+        isReconnecting = true
+        defer { isReconnecting = false }
+
         status = .connecting
         lastError = nil
-        selectedProjectDirectory = restoreSelectedProject(for: server.id)
-        let client = OpencodeClient(config: server, directory: selectedProjectDirectory)
+
+        let restored = restoreSelectedProject(for: server.id)
+        selectedProjectDirectory = restored
+        // Keep the spinner up on the first attempt only when a default-project
+        // fallback is still available, so a recoverable saved-directory failure
+        // doesn't flash a terminal error before we retry.
+        if await establish(server: server, directory: restored,
+                           keepConnectingOnFailure: restored != nil) {
+            return
+        }
+        // A persisted project directory can become invalid (the server stopped
+        // hosting it, or an old build saved one it rejects like "/"). Never let
+        // that strand the user: retry the server's default project. Only forget
+        // the saved directory once the default actually connects, so a server
+        // that's merely down doesn't discard the user's selection.
+        if restored != nil {
+            selectedProjectDirectory = nil
+            if await establish(server: server, directory: nil) {
+                persistSelectedProject(nil, for: server.id)
+                lastError = "Couldn't open the saved project; reconnected to the server default."
+                return
+            }
+            selectedProjectDirectory = restored
+        }
+    }
+
+    /// Connect with a specific project `directory` (`nil` = server default): tear
+    /// down any live state, run the health gate, and—on success—load projects,
+    /// sessions, metadata, git and start the event stream. Returns whether the
+    /// connection is live. On failure it sets `lastError`; it sets a terminal
+    /// `.failed` status unless `keepConnectingOnFailure` is set (used while a
+    /// caller still has a recovery attempt to make, to avoid UI flicker).
+    @discardableResult
+    private func establish(server: ServerConfig, directory: String?,
+                           keepConnectingOnFailure: Bool = false) async -> Bool {
+        await teardown()
+        let client = OpencodeClient(config: server, directory: directory)
         self.client = client
 
         do {
             let ok = try await client.health()
             guard ok else {
-                status = .failed("Server health check failed")
-                return
+                if !keepConnectingOnFailure { status = .failed("Server health check failed") }
+                return false
             }
             status = .connected
             await loadProjects()
@@ -191,10 +239,12 @@ final class KorboStore: ObservableObject {
             await loadMetadata()
             await loadGit()
             startEventStream()
+            return true
         } catch {
             let message = (error as? OpencodeError)?.errorDescription ?? error.localizedDescription
-            status = .failed(message)
             lastError = message
+            if !keepConnectingOnFailure { status = .failed(message) }
+            return false
         }
     }
 
@@ -262,6 +312,15 @@ final class KorboStore: ObservableObject {
         return leaf.isEmpty ? dir : leaf
     }
 
+    /// Human-readable label for an arbitrary project directory, used in switch
+    /// error messages. `nil`/empty resolves to the server-default project.
+    private func projectDisplayName(_ directory: String?) -> String {
+        guard let dir = directory, !dir.isEmpty else { return "the default project" }
+        if let p = projects.first(where: { $0.scopeDirectory == dir }) { return p.name }
+        let leaf = (dir as NSString).lastPathComponent
+        return leaf.isEmpty ? dir : leaf
+    }
+
     /// Fetch the server's project list and, on first connect, adopt its current
     /// project so the switcher highlights the right entry. Degrades gracefully
     /// on servers that don't expose `/project`.
@@ -281,17 +340,46 @@ final class KorboStore: ObservableObject {
         }
     }
 
-    /// Switch the active project: persist the choice, clear the now-stale session
-    /// selection, and reconnect so every request (sessions, files, vcs, events)
-    /// re-scopes to the new directory via `?directory=`. `directory` is a
-    /// project's `scopeDirectory` (sandbox when present, else worktree).
+    /// Switch the active project, re-scoping every request (sessions, files, vcs,
+    /// events) to the new `?directory=`. `directory` is a project's
+    /// `scopeDirectory` (sandbox when present, else worktree).
+    ///
+    /// Crucially, the choice is persisted *only after* the new project connects:
+    /// if the server rejects the directory we roll back to the previous
+    /// known-good project and never write the bad value, so a bad pick can't lock
+    /// the app into a permanently-failed connection on relaunch.
     func switchProject(to directory: String) async {
         guard selectedProjectDirectory != directory else { return }
-        selectedProjectDirectory = directory
-        persistSelectedProject(directory, for: servers.selectedServerID)
+        guard let server = servers.selectedServer, server.baseURL != nil else { return }
+        if isReconnecting { return }
+        isReconnecting = true
+        defer { isReconnecting = false }
+
+        let previous = selectedProjectDirectory
+        let previousSessionID = selectedSessionID
+        // Drop the now-stale session/message selection so the new project's list
+        // loads cleanly; restored on rollback if the switch fails.
         selectedSessionID = nil
         messages = []
-        await connect()
+        status = .connecting
+        lastError = nil
+        selectedProjectDirectory = directory
+
+        if await establish(server: server, directory: directory, keepConnectingOnFailure: true) {
+            persistSelectedProject(directory, for: server.id)
+            return
+        }
+        // The target directory is unreachable — roll back to the previous,
+        // known-good project. The persisted value was never changed (we persist
+        // only on success), so it already points at `previous`.
+        let failedName = projectDisplayName(directory)
+        selectedProjectDirectory = previous
+        selectedSessionID = previousSessionID
+        if await establish(server: server, directory: previous) {
+            lastError = "Couldn't switch to \(failedName). Staying on the current project."
+        } else {
+            lastError = "Couldn't switch to \(failedName), and reconnecting to the previous project also failed."
+        }
     }
 
     private static let selectedProjectKey = "korbo.selectedProject.v2"
@@ -309,6 +397,8 @@ final class KorboStore: ObservableObject {
         else { map.removeValue(forKey: serverID.uuidString) }
         UserDefaults.standard.set(map, forKey: Self.selectedProjectKey)
     }
+
+    // MARK: - Metadata
 
     private func loadMetadata() async {
         guard let client else { return }

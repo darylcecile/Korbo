@@ -4,9 +4,11 @@ import UIKit
 struct SessionsSidebar: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var store: KorboStore
+    @EnvironmentObject private var cloud: CloudStore
     @Environment(\.openWindow) private var openWindow
 
     @State private var showSearch = false
+    @State private var showInstancePicker = false
     @State private var showProjectPicker = false
     @State private var collapsed: Set<String> = []
     @State private var renameTarget: OCSession?
@@ -22,6 +24,7 @@ struct SessionsSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar
+            instanceBar
             projectBar
             if showSearch { searchField }
             content
@@ -63,6 +66,11 @@ struct SessionsSidebar: View {
         .sheet(item: $shareItem) { item in
             ActivityView(items: [URL(string: item.url) ?? item.url as Any])
         }
+        .sheet(isPresented: $showInstancePicker) {
+            InstancePickerView()
+                .environmentObject(cloud)
+                .environmentObject(app)
+        }
         .sheet(isPresented: $showProjectPicker) {
             ProjectPickerView()
                 .environmentObject(store)
@@ -88,32 +96,32 @@ struct SessionsSidebar: View {
         Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
     }
 
-    // MARK: Project switcher
+    // MARK: Instance switcher
 
-    /// Workspace/project switcher: a server can host many projects (opencode
-    /// `?directory=` worktrees). Shows the active one and lets the user switch,
-    /// re-scoping all sessions, files and git to that project.
+    /// Cloud-instance switcher: the primary unit a user moves between is a
+    /// provisioned Korbo Cloud instance, labelled by its repo. Shown only while
+    /// actually connected to a cloud instance — on a local/LAN server the project
+    /// switcher takes its place instead (the two are mutually exclusive). Opens a
+    /// searchable picker to jump to another instance.
     @ViewBuilder
-    private var projectBar: some View {
-        if !isSelectMode, store.status.isConnected,
-           store.selectedProjectName != nil || store.projects.count > 1 {
+    private var instanceBar: some View {
+        if !isSelectMode, cloud.connectedInstance != nil {
             Button {
-                showProjectPicker = true
+                showInstancePicker = true
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "folder")
+                    Image(systemName: "cloud")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.textTertiary)
-                    Text(store.selectedProjectName ?? "Project")
+                    Text(cloud.connectedInstance?.displayName ?? "Select instance")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                     Spacer(minLength: 4)
-                    if store.projects.count > 1 {
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.textTertiary)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
@@ -121,7 +129,45 @@ struct SessionsSidebar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(store.projects.count <= 1)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+            .accessibilityLabel("Instance \(cloud.connectedInstance?.displayName ?? "none")")
+            .accessibilityHint("Switch cloud instance")
+        }
+    }
+
+    /// Project switcher: a single opencode server can host several projects (each
+    /// an `?directory=` worktree). Shown only on a local/LAN server (i.e. not a
+    /// single-workspace cloud instance) that actually exposes more than one
+    /// project, so it never competes with the instance switcher or clutters
+    /// single-project servers. Picking one re-scopes sessions, files and git; a
+    /// rejected directory rolls back automatically (no lock-out).
+    @ViewBuilder
+    private var projectBar: some View {
+        if !isSelectMode, cloud.connectedInstance == nil, store.projects.count > 1 {
+            Button {
+                showProjectPicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text(store.selectedProjectName ?? "Select project")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panelRaised))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
             .accessibilityLabel("Project \(store.selectedProjectName ?? "none")")
