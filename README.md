@@ -2,6 +2,9 @@
 
 **An [opencode](https://github.com/anomalyco/opencode) client for iPad, built in SwiftUI.**
 
+<img width="2752" height="2064" alt="image" src="https://github.com/user-attachments/assets/ecb5568b-f6a6-4013-b98d-8b71aa8498a3" />
+
+
 Korbo is "[openchamber](https://github.com/openchamber/openchamber) for iPad" — a
 native, touch‑first client for the open‑source AI coding agent opencode. It talks
 to a remote/LAN `opencode serve` instance over REST + SSE + WebSocket and presents
