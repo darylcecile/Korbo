@@ -60,6 +60,26 @@ actor KorboCloudClient {
         let _: CloudOKResponse = try await request("/api/instances/\(pathEncode(id))", method: .delete)
     }
 
+    // MARK: - Self-hosted (BYO) sessions
+
+    /// `GET /api/sessions` — self-hosted sessions registered by the `korbo` CLI.
+    func listSessions() async throws -> [CloudSession] {
+        let response: CloudSessionsResponse = try await request("/api/sessions", method: .get)
+        return response.sessions
+    }
+
+    /// `GET /api/sessions/:id`
+    func getSession(_ id: String) async throws -> CloudSession {
+        let response: CloudSessionResponse = try await request("/api/sessions/\(pathEncode(id))", method: .get)
+        return response.session
+    }
+
+    /// `DELETE /api/sessions/:id` — removes the session registration (CLI-owned;
+    /// exposed here only for the optional "remove" affordance in the app).
+    func deleteSession(_ id: String) async throws {
+        let _: CloudOKResponse = try await request("/api/sessions/\(pathEncode(id))", method: .delete)
+    }
+
     /// `GET /api/github/installations`
     func installations() async throws -> [CloudInstallation] {
         let response: CloudInstallationsResponse = try await request("/api/github/installations", method: .get)

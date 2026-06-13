@@ -23,15 +23,27 @@ struct InstancePickerView: View {
         }
     }
 
+    private var filteredSessions: [CloudSession] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return cloud.sessions }
+        return cloud.sessions.filter {
+            $0.displayName.localizedCaseInsensitiveContains(trimmed)
+                || ($0.repo ?? "").localizedCaseInsensitiveContains(trimmed)
+                || $0.id.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    private var hasResults: Bool { !filtered.isEmpty || !filteredSessions.isEmpty }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             searchField
             Divider().overlay(Theme.panelRaised)
-            if filtered.isEmpty {
-                emptyState
-            } else {
+            if hasResults {
                 list
+            } else {
+                emptyState
             }
             Divider().overlay(Theme.panelRaised)
             manageButton
@@ -39,7 +51,12 @@ struct InstancePickerView: View {
         .background(Theme.panel)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .task { if cloud.isSignedIn { await cloud.refreshInstances() } }
+        .task {
+            if cloud.isSignedIn {
+                await cloud.refreshInstances()
+                await cloud.refreshSessions()
+            }
+        }
     }
 
     private var header: some View {
@@ -48,7 +65,7 @@ struct InstancePickerView: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
-            Text("\(cloud.instances.count)")
+            Text("\(cloud.instances.count + cloud.sessions.count)")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.textTertiary)
                 .monospacedDigit()
@@ -98,17 +115,44 @@ struct InstancePickerView: View {
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 2) {
-                ForEach(filtered) { instance in
-                    row(instance)
-                    if instance.id != filtered.last?.id {
-                        Divider().overlay(Theme.panelRaised.opacity(0.5))
-                            .padding(.leading, 44)
+                if !filtered.isEmpty {
+                    if !filteredSessions.isEmpty {
+                        sectionHeader("Cloud instances")
+                    }
+                    ForEach(filtered) { instance in
+                        row(instance)
+                        if instance.id != filtered.last?.id {
+                            Divider().overlay(Theme.panelRaised.opacity(0.5))
+                                .padding(.leading, 44)
+                        }
+                    }
+                }
+                if !filteredSessions.isEmpty {
+                    sectionHeader("Your machines")
+                    ForEach(filteredSessions) { session in
+                        sessionRow(session)
+                        if session.id != filteredSessions.last?.id {
+                            Divider().overlay(Theme.panelRaised.opacity(0.5))
+                                .padding(.leading, 44)
+                        }
                     }
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        HStack {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.textTertiary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
     }
 
     private func row(_ instance: CloudInstance) -> some View {
@@ -164,6 +208,68 @@ struct InstancePickerView: View {
         "\(instance.state.displayLabel) · \(instance.machineType) · \(instance.id.suffix(6))"
     }
 
+    /// A self-hosted (BYO) session row: a local-machine glyph, online/offline
+    /// state, and a "Local" tag. Offline machines are disabled.
+    private func sessionRow(_ session: CloudSession) -> some View {
+        let isSelected = session.id == cloud.connectedSession?.id
+        let isOnline = session.status.isOnline
+        return Button {
+            Task { await cloud.connectToSession(session) }
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "desktopcomputer")
+                    .font(.system(size: 14))
+                    .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(session.displayName)
+                            .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text("Local")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Theme.accent.opacity(0.15)))
+                    }
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(isOnline ? Theme.added : Theme.textTertiary)
+                            .frame(width: 6, height: 6)
+                        Text("\(session.status.displayLabel) · \(session.id.suffix(6))")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: 8)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .opacity(isOnline ? 1 : 0.45)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Theme.panelRaised : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isOnline || cloud.isBusy)
+        .accessibilityLabel(session.displayName)
+        .accessibilityValue("Local machine, \(session.status.displayLabel)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
     private var manageButton: some View {
         Button {
             // Mirror ConnectionSheet's pattern: dismiss this sheet first, then
@@ -193,16 +299,20 @@ struct InstancePickerView: View {
             Image(systemName: "cloud.badge.questionmark")
                 .font(.system(size: 32))
                 .foregroundStyle(Theme.textTertiary)
-            Text(cloud.instances.isEmpty ? "No instances yet" : "No matching instances")
+            Text(hasAny ? "No matching machines" : "Nothing to connect to yet")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
-            if cloud.instances.isEmpty {
-                Text("Spawn one from Manage instances.")
+            if !hasAny {
+                Text("Spawn a cloud instance from Manage, or run the korbo CLI to add your own machine.")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
             }
             Spacer()
         }
         .frame(maxWidth: .infinity)
     }
+
+    private var hasAny: Bool { !cloud.instances.isEmpty || !cloud.sessions.isEmpty }
 }

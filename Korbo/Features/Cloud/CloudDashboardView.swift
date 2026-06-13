@@ -20,6 +20,11 @@ struct CloudDashboardView: View {
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                     }
+                    Section {
+                        CloudSessionsView()
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
                 }
             }
             .scrollContentBackground(.hidden)

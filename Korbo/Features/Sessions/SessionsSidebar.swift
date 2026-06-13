@@ -98,26 +98,35 @@ struct SessionsSidebar: View {
 
     // MARK: Instance switcher
 
-    /// Cloud-instance switcher: the primary unit a user moves between is a
-    /// provisioned Korbo Cloud instance, labelled by its repo. Shown only while
-    /// actually connected to a cloud instance — on a local/LAN server the project
-    /// switcher takes its place instead (the two are mutually exclusive). Opens a
-    /// searchable picker to jump to another instance.
+    /// Cloud switcher: the primary unit a user moves between is a connected cloud
+    /// resource — either a provisioned Korbo Cloud instance or a self-hosted
+    /// session — labelled by its repo/name. Shown only while actually connected to
+    /// one; on a local/LAN server the project switcher takes its place instead (the
+    /// two are mutually exclusive). Opens a searchable picker to jump elsewhere.
     @ViewBuilder
     private var instanceBar: some View {
-        if !isSelectMode, cloud.connectedInstance != nil {
+        if !isSelectMode, cloud.isConnectedToCloudResource {
+            let isLocal = cloud.connectedSession != nil
             Button {
                 showInstancePicker = true
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "cloud")
+                    Image(systemName: isLocal ? "desktopcomputer" : "cloud")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.textTertiary)
-                    Text(cloud.connectedInstance?.displayName ?? "Select instance")
+                    Text(cloud.connectedDisplayName ?? "Select instance")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if isLocal {
+                        Text("Local")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Theme.accent.opacity(0.15)))
+                    }
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 9))
@@ -131,8 +140,8 @@ struct SessionsSidebar: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
-            .accessibilityLabel("Instance \(cloud.connectedInstance?.displayName ?? "none")")
-            .accessibilityHint("Switch cloud instance")
+            .accessibilityLabel("\(isLocal ? "Machine" : "Instance") \(cloud.connectedDisplayName ?? "none")")
+            .accessibilityHint("Switch cloud instance or machine")
         }
     }
 
@@ -144,7 +153,7 @@ struct SessionsSidebar: View {
     /// rejected directory rolls back automatically (no lock-out).
     @ViewBuilder
     private var projectBar: some View {
-        if !isSelectMode, cloud.connectedInstance == nil, store.projects.count > 1 {
+        if !isSelectMode, !cloud.isConnectedToCloudResource, store.projects.count > 1 {
             Button {
                 showProjectPicker = true
             } label: {

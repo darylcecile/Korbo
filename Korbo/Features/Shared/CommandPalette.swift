@@ -162,6 +162,7 @@ struct CommandPalette: View {
         out += actionItems.filter { q.isEmpty || $0.title.lowercased().contains(q) }
         out += sessionItems(q)
         out += instanceItems(q)
+        out += machineItems(q)
         out += projectItems(q)
         out += fileItems
         out += commandItems(q)
@@ -249,13 +250,40 @@ struct CommandPalette: View {
         }
     }
 
+    /// Self-hosted (BYO) machine switcher entries. Lets the user jump to one of
+    /// their own registered machines. Only online machines are connectable;
+    /// offline ones are surfaced but no-op with an offline hint. Matches on
+    /// name/repo/id and the keyword "switch machine". Only when signed into Cloud.
+    private func machineItems(_ q: String) -> [PaletteItem] {
+        guard cloud.isSignedIn else { return [] }
+        let connectedID = cloud.connectedSession?.id
+        let filtered = q.isEmpty
+            ? Array(cloud.sessions.prefix(6))
+            : cloud.sessions.filter {
+                $0.displayName.lowercased().contains(q)
+                    || ($0.repo ?? "").lowercased().contains(q)
+                    || $0.id.lowercased().contains(q)
+                    || "switch to machine".contains(q)
+            }
+        return filtered.prefix(8).map { session in
+            let isConnected = session.id == connectedID
+            return PaletteItem(
+                id: "byo-\(session.id)",
+                icon: "desktopcomputer",
+                title: isConnected ? "Connected to \(session.displayName)" : "Switch to \(session.displayName)",
+                subtitle: "Local · \(session.status.displayLabel)",
+                group: "Switch to machine"
+            ) { perform { Task { await cloud.connectToSession(session) } } }
+        }
+    }
+
     /// Project switcher entries: a single opencode server can host several
     /// projects (each an `?directory=` worktree). Lets the user re-scope sessions,
     /// files and git to another project from the keyboard. Matches on name/path
     /// and the synthetic keyword "switch project". Only on a local/LAN server (not
     /// a single-workspace cloud instance) that exposes more than one project.
     private func projectItems(_ q: String) -> [PaletteItem] {
-        guard cloud.connectedInstance == nil, store.projects.count > 1 else { return [] }
+        guard cloud.connectedInstance == nil, cloud.connectedSession == nil, store.projects.count > 1 else { return [] }
         let selectedDir = store.selectedProjectDirectory
         let filtered = q.isEmpty
             ? Array(store.projects.prefix(6))
