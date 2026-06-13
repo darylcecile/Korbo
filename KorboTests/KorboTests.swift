@@ -51,4 +51,27 @@ final class KorboTests: XCTestCase {
                                 proxyHost: "byo-abcdef.cloud.korbo.app", createdAt: nil, lastHeartbeat: nil)
         XCTAssertEqual(bare.displayName, "Session abcdef")
     }
+
+    func testCloudSessionKindDecodingAndStreamingLimited() {
+        let decoder = JSONDecoder()
+        func decode(_ body: String) -> CloudSession {
+            try! decoder.decode(CloudSession.self, from: Data(body.utf8))
+        }
+        // A quick tunnel buffers SSE → streaming is flagged as limited.
+        let quick = decode(#"{"id":"byo-1","status":"online","proxyHost":"byo-1.cloud.korbo.app","kind":"quick"}"#)
+        XCTAssertEqual(quick.kind, .quick)
+        XCTAssertTrue(quick.isStreamingLimited)
+        // A named tunnel streams normally.
+        let named = decode(#"{"id":"byo-2","status":"online","proxyHost":"byo-2.cloud.korbo.app","kind":"named"}"#)
+        XCTAssertEqual(named.kind, .named)
+        XCTAssertFalse(named.isStreamingLimited)
+        // Absent kind (older backend) → unknown, never shows a false warning.
+        let absent = decode(#"{"id":"byo-3","status":"online","proxyHost":"byo-3.cloud.korbo.app"}"#)
+        XCTAssertEqual(absent.kind, .unknown)
+        XCTAssertFalse(absent.isStreamingLimited)
+        // Unrecognised kind → unknown (forward-compatible), no warning.
+        let future = decode(#"{"id":"byo-4","status":"online","proxyHost":"byo-4.cloud.korbo.app","kind":"wireguard"}"#)
+        XCTAssertEqual(future.kind, .unknown)
+        XCTAssertFalse(future.isStreamingLimited)
+    }
 }
