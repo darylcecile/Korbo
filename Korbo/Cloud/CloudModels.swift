@@ -267,6 +267,24 @@ enum CloudSessionStatus: String, Codable, Hashable, CaseIterable {
     }
 }
 
+/// How a BYO session's local opencode is exposed through Cloudflare. Quick
+/// tunnels (`*.trycloudflare.com`) buffer Server-Sent Events at the edge, so the
+/// app's `/global/event` stream never flushes and live assistant responses don't
+/// stream in (they still complete and show up on a manual refresh). Named
+/// tunnels stream normally. Unrecognised/absent values decode to `.unknown`,
+/// which is treated as non-degraded so an older backend that omits `kind` never
+/// triggers a false "limited" warning.
+enum CloudSessionKind: String, Codable, Hashable, CaseIterable {
+    case quick
+    case named
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = CloudSessionKind(rawValue: raw) ?? .unknown
+    }
+}
+
 /// A self-hosted ("bring your own machine") opencode session registered by the
 /// `korbo` CLI (`GET /api/sessions`). Reached through the same per-host proxy as
 /// managed instances, but free and with a simple online/offline status instead
@@ -283,13 +301,17 @@ struct CloudSession: Codable, Hashable, Identifiable {
     let proxyHost: String
     let createdAt: Date?
     let lastHeartbeat: Date?
+    /// How the session's opencode is tunnelled (`quick` vs `named`). Drives the
+    /// "limited connection" hint: quick tunnels buffer SSE so live streaming is
+    /// unavailable. Absent on older backends → `.unknown` (no warning shown).
+    let kind: CloudSessionKind
     /// The raw `status` string as received, retained for diagnostics so a future
     /// backend value (e.g. `degraded`) isn't silently indistinguishable from a
     /// genuine `offline`.
     let rawStatus: String
 
     enum CodingKeys: String, CodingKey {
-        case id, name, repo, status, proxyHost, createdAt, lastHeartbeat
+        case id, name, repo, status, proxyHost, createdAt, lastHeartbeat, kind
     }
 
     init(
@@ -300,6 +322,7 @@ struct CloudSession: Codable, Hashable, Identifiable {
         proxyHost: String,
         createdAt: Date?,
         lastHeartbeat: Date?,
+        kind: CloudSessionKind = .unknown,
         rawStatus: String? = nil
     ) {
         self.id = id
@@ -309,6 +332,7 @@ struct CloudSession: Codable, Hashable, Identifiable {
         self.proxyHost = proxyHost
         self.createdAt = createdAt
         self.lastHeartbeat = lastHeartbeat
+        self.kind = kind
         self.rawStatus = rawStatus ?? status.rawValue
     }
 
@@ -323,6 +347,8 @@ struct CloudSession: Codable, Hashable, Identifiable {
         proxyHost = try c.decode(String.self, forKey: .proxyHost)
         createdAt = (try c.decodeIfPresent(String.self, forKey: .createdAt)).flatMap(parseISO8601)
         lastHeartbeat = (try c.decodeIfPresent(String.self, forKey: .lastHeartbeat)).flatMap(parseISO8601)
+        kind = (try c.decodeIfPresent(String.self, forKey: .kind))
+            .flatMap(CloudSessionKind.init(rawValue:)) ?? .unknown
     }
 
     func encode(to encoder: Encoder) throws {
@@ -335,6 +361,7 @@ struct CloudSession: Codable, Hashable, Identifiable {
         let formatter = ISO8601DateFormatter()
         try c.encodeIfPresent(createdAt.map(formatter.string(from:)), forKey: .createdAt)
         try c.encodeIfPresent(lastHeartbeat.map(formatter.string(from:)), forKey: .lastHeartbeat)
+        if kind != .unknown { try c.encode(kind.rawValue, forKey: .kind) }
     }
 }
 
@@ -349,6 +376,15 @@ extension CloudSession {
         if !trimmedRepo.isEmpty { return trimmedRepo }
         return "Session \(id.suffix(6))"
     }
+
+    /// True when this session is reached over a quick tunnel, which buffers SSE so
+    /// live assistant responses won't stream in. The session is still usable
+    /// (connect, send, refresh), just not real-time — surfaced as a "Limited" hint.
+    var isStreamingLimited: Bool { kind == .quick }
+
+    /// User-facing explanation shown alongside the "Limited" badge.
+    static let streamingLimitedHint =
+        "Live responses won't stream in on this connection. Restart this machine with the korbo CLI to use a named tunnel for real-time streaming."
 }
 
 // MARK: - GitHub linkage

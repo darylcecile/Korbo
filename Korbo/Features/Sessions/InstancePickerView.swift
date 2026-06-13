@@ -235,6 +235,14 @@ struct InstancePickerView: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Capsule().fill(Theme.accent.opacity(0.15)))
+                        if isOnline, session.isStreamingLimited {
+                            Text("Limited")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Theme.warning)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Theme.warning.opacity(0.15)))
+                        }
                     }
                     HStack(spacing: 5) {
                         Circle()
@@ -245,6 +253,13 @@ struct InstancePickerView: View {
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                    }
+                    if isOnline, session.isStreamingLimited {
+                        Text("Live streaming unavailable on this connection")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.warning)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
                 Spacer(minLength: 8)
@@ -266,7 +281,7 @@ struct InstancePickerView: View {
         .buttonStyle(.plain)
         .disabled(!isOnline || cloud.isBusy)
         .accessibilityLabel(session.displayName)
-        .accessibilityValue("Local machine, \(session.status.displayLabel)")
+        .accessibilityValue("Local machine, \(session.status.displayLabel)\(isOnline && session.isStreamingLimited ? ", live streaming unavailable" : "")")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 

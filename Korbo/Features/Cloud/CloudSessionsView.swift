@@ -133,6 +133,11 @@ private struct SessionRow: View {
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+            } else if session.isStreamingLimited {
+                Label(CloudSession.streamingLimitedHint, systemImage: "wifi.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             actionRow
         }
@@ -156,6 +161,7 @@ private struct SessionRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             localBadge
+            if isOnline, session.isStreamingLimited { limitedBadge }
             Spacer(minLength: 8)
             statusPill
         }
@@ -170,6 +176,17 @@ private struct SessionRow: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(Capsule().fill(Theme.accent.opacity(0.15)))
+    }
+
+    /// Flags a quick-tunnel session whose live SSE streaming is buffered away.
+    private var limitedBadge: some View {
+        Text("Limited")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Theme.warning)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Theme.warning.opacity(0.15)))
+            .accessibilityLabel("Limited connection, live streaming unavailable")
     }
 
     private var statusPill: some View {

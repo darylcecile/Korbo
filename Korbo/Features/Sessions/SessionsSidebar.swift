@@ -126,6 +126,14 @@ struct SessionsSidebar: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Capsule().fill(Theme.accent.opacity(0.15)))
+                        if cloud.connectedSession?.isStreamingLimited == true {
+                            Text("Limited")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Theme.warning)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Theme.warning.opacity(0.15)))
+                        }
                     }
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.up.chevron.down")
@@ -140,7 +148,7 @@ struct SessionsSidebar: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
-            .accessibilityLabel("\(isLocal ? "Machine" : "Instance") \(cloud.connectedDisplayName ?? "none")")
+            .accessibilityLabel("\(isLocal ? "Machine" : "Instance") \(cloud.connectedDisplayName ?? "none")\(cloud.connectedSession?.isStreamingLimited == true ? ", live streaming unavailable" : "")")
             .accessibilityHint("Switch cloud instance or machine")
         }
     }
