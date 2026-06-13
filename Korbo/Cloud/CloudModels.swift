@@ -242,6 +242,115 @@ struct CloudInstanceStateDetail: Codable, Hashable, Identifiable {
     }
 }
 
+// MARK: - Self-hosted (BYO) sessions
+
+/// Online/offline status of a bring-your-own-machine session. Unrecognised
+/// strings decode to `.offline` (the safe default for connection gating) while
+/// preserving the raw value via `CloudSession.rawStatus` for diagnostics.
+enum CloudSessionStatus: String, Codable, Hashable, CaseIterable {
+    case online
+    case offline
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = CloudSessionStatus(rawValue: raw) ?? .offline
+    }
+
+    /// The session's local opencode is reachable through the proxy.
+    var isOnline: Bool { self == .online }
+
+    var displayLabel: String {
+        switch self {
+        case .online:  return "Online"
+        case .offline: return "Offline"
+        }
+    }
+}
+
+/// A self-hosted ("bring your own machine") opencode session registered by the
+/// `korbo` CLI (`GET /api/sessions`). Reached through the same per-host proxy as
+/// managed instances, but free and with a simple online/offline status instead
+/// of a provisioning lifecycle. Timestamps decode from ISO8601 and fall back to
+/// `nil` on malformed values.
+struct CloudSession: Codable, Hashable, Identifiable {
+    let id: String
+    let name: String?
+    let repo: String?
+    let status: CloudSessionStatus
+    /// Full proxy host (e.g. `byo-abc123.cloud.korbo.app`) used verbatim to build
+    /// the opencode base URL. Kept domain-agnostic so the app isn't coupled to a
+    /// hardcoded cloud host.
+    let proxyHost: String
+    let createdAt: Date?
+    let lastHeartbeat: Date?
+    /// The raw `status` string as received, retained for diagnostics so a future
+    /// backend value (e.g. `degraded`) isn't silently indistinguishable from a
+    /// genuine `offline`.
+    let rawStatus: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, repo, status, proxyHost, createdAt, lastHeartbeat
+    }
+
+    init(
+        id: String,
+        name: String?,
+        repo: String?,
+        status: CloudSessionStatus,
+        proxyHost: String,
+        createdAt: Date?,
+        lastHeartbeat: Date?,
+        rawStatus: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.repo = repo
+        self.status = status
+        self.proxyHost = proxyHost
+        self.createdAt = createdAt
+        self.lastHeartbeat = lastHeartbeat
+        self.rawStatus = rawStatus ?? status.rawValue
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        repo = try c.decodeIfPresent(String.self, forKey: .repo)
+        let raw = try c.decodeIfPresent(String.self, forKey: .status) ?? "offline"
+        rawStatus = raw
+        status = CloudSessionStatus(rawValue: raw) ?? .offline
+        proxyHost = try c.decode(String.self, forKey: .proxyHost)
+        createdAt = (try c.decodeIfPresent(String.self, forKey: .createdAt)).flatMap(parseISO8601)
+        lastHeartbeat = (try c.decodeIfPresent(String.self, forKey: .lastHeartbeat)).flatMap(parseISO8601)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(repo, forKey: .repo)
+        try c.encode(status.rawValue, forKey: .status)
+        try c.encode(proxyHost, forKey: .proxyHost)
+        let formatter = ISO8601DateFormatter()
+        try c.encodeIfPresent(createdAt.map(formatter.string(from:)), forKey: .createdAt)
+        try c.encodeIfPresent(lastHeartbeat.map(formatter.string(from:)), forKey: .lastHeartbeat)
+    }
+}
+
+extension CloudSession {
+    /// Short, human-friendly label: the user-given name, else the repo, else a
+    /// truncated id. Mirrors `CloudInstance.displayName` so shared UI can treat
+    /// both uniformly.
+    var displayName: String {
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedName.isEmpty { return trimmedName }
+        let trimmedRepo = repo?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedRepo.isEmpty { return trimmedRepo }
+        return "Session \(id.suffix(6))"
+    }
+}
+
 // MARK: - GitHub linkage
 
 /// A GitHub App installation available to the account
@@ -345,6 +454,14 @@ struct CloudInstancesResponse: Decodable {
 
 struct CloudInstanceResponse: Decodable {
     let instance: CloudInstance
+}
+
+struct CloudSessionsResponse: Decodable {
+    let sessions: [CloudSession]
+}
+
+struct CloudSessionResponse: Decodable {
+    let session: CloudSession
 }
 
 struct CloudInstallationsResponse: Decodable {

@@ -17,6 +17,10 @@ final class CloudStore: ObservableObject {
     @Published private(set) var me: CloudUser?
     @Published private(set) var balance: CloudBalance?
     @Published private(set) var instances: [CloudInstance] = []
+    /// Self-hosted ("bring your own machine") sessions registered via the `korbo`
+    /// CLI. Listed alongside managed `instances` but free and connection-gated on
+    /// a simple online/offline `status`.
+    @Published private(set) var sessions: [CloudSession] = []
     @Published private(set) var isBusy: Bool = false
     @Published var lastError: String?
 
@@ -45,10 +49,12 @@ final class CloudStore: ObservableObject {
     private let auth: CloudAuthController
     private weak var korbo: KorboStore?
 
-    /// Persisted `instanceID → ServerConfig.id` map so a reconnect reuses the
-    /// same Keychain bearer entry rather than leaking a new server each time.
+    /// Persisted `resourceID → ServerConfig.id` map so a reconnect reuses the
+    /// same Keychain bearer entry rather than leaking a new server each time. The
+    /// `resourceID` is either a managed instance id (`inst-…`) or a self-hosted
+    /// session id (`byo-…`); both are globally unique so they share one map.
     private static let serverIDMapKey = "korbo.cloud.serverIDByInstance.v1"
-    private var serverIDByInstance: [String: String]
+    private var serverIDByResource: [String: String]
 
     /// Maximum time to wait for a transitional instance to become ready.
     private let readinessTimeout: TimeInterval = 60
@@ -64,7 +70,7 @@ final class CloudStore: ObservableObject {
         })
         self.auth = CloudAuthController()
         self.isSignedIn = tokenStore.isSignedIn
-        self.serverIDByInstance = UserDefaults.standard
+        self.serverIDByResource = UserDefaults.standard
             .dictionary(forKey: Self.serverIDMapKey) as? [String: String] ?? [:]
     }
 
@@ -80,6 +86,7 @@ final class CloudStore: ObservableObject {
         isSignedIn = true
         await refreshMe()
         await refreshInstances()
+        await refreshSessions()
     }
 
     // MARK: - Authentication
@@ -93,6 +100,7 @@ final class CloudStore: ObservableObject {
             isSignedIn = tokenStore.isSignedIn
             await refreshMe()
             await refreshInstances()
+            await refreshSessions()
         } catch {
             isSignedIn = tokenStore.isSignedIn
             setError(error)
@@ -118,6 +126,7 @@ final class CloudStore: ObservableObject {
             me = response.user
             balance = response.balance
             await refreshInstances()
+            await refreshSessions()
         } catch CloudError.invalidToken, CloudError.notSignedIn {
             tokenStore.clear()
             isSignedIn = false
@@ -137,6 +146,7 @@ final class CloudStore: ObservableObject {
         me = nil
         balance = nil
         instances = []
+        sessions = []
         lastError = nil
         workspaceNotice = nil
     }
@@ -163,6 +173,15 @@ final class CloudStore: ObservableObject {
         }
     }
 
+    /// Refresh the list of self-hosted (BYO) sessions. Failures are swallowed into
+    /// an empty list rather than the shared `lastError`: `/api/sessions` is additive
+    /// (and may be absent for accounts/backends without the feature), so a missing
+    /// or failing endpoint must never surface a dashboard error to users who never
+    /// touch BYO.
+    func refreshSessions() async {
+        sessions = (try? await client.listSessions()) ?? []
+    }
+
     // MARK: - Instance management
 
     func createInstance(machineType: String, repo: String?) async throws -> CloudInstance {
@@ -174,6 +193,15 @@ final class CloudStore: ObservableObject {
     func deleteInstance(_ id: String) async throws {
         try await client.deleteInstance(id)
         await refreshInstances()
+    }
+
+    /// Remove a self-hosted session registration. If it's the one currently
+    /// connected, tear down its saved `ServerConfig` first so the app isn't left
+    /// pointed at a proxy that no longer resolves.
+    func deleteSession(_ id: String) async throws {
+        try await client.deleteSession(id)
+        cleanupServer(forResourceID: id)
+        await refreshSessions()
     }
 
     func instanceState(_ id: String) async throws -> CloudInstanceStateDetail {
@@ -258,6 +286,57 @@ final class CloudStore: ObservableObject {
         Task { [weak self] in await self?.evaluateWorkspaceRestore(instanceID) }
     }
 
+    /// Connect the shared opencode session to a self-hosted (BYO) session's proxy.
+    ///
+    /// The session is reached exactly like a managed instance — `https://<proxyHost>`
+    /// with the account bearer token — so this reuses the same `ServerConfig` →
+    /// `KorboStore.connect()` path. There is no provisioning lifecycle to wait on;
+    /// instead we re-check the session is still `online` right before connecting so
+    /// a stale `online` from the cached list doesn't strand the user on a dead proxy.
+    func connectToSession(_ session: CloudSession) async {
+        guard let korbo else {
+            lastError = "Korbo Cloud is not attached to the app yet."
+            return
+        }
+        guard let token = tokenStore.token, !token.isEmpty else {
+            lastError = CloudError.notSignedIn.errorDescription
+            return
+        }
+        guard !isBusy else { return }
+        guard let baseURLString = Self.sessionBaseURLString(for: session.proxyHost) else {
+            lastError = "This machine reported an invalid address. Update the korbo CLI and try again."
+            return
+        }
+
+        isBusy = true
+        lastError = nil
+        workspaceNotice = nil
+        defer { isBusy = false }
+
+        // Re-check liveness: a session listed as online may have gone offline since
+        // the last refresh. Best-effort — if the check itself fails we fall back to
+        // the cached status rather than blocking a connect on a transient API error.
+        var current = session
+        if let fresh = try? await client.getSession(session.id) {
+            current = fresh
+            sessions = sessions.map { $0.id == fresh.id ? fresh : $0 }
+        }
+        guard current.status.isOnline else {
+            lastError = "“\(session.displayName)” is offline. Start it on your machine with the korbo CLI, then try again."
+            return
+        }
+
+        let serverID = stableServerID(for: session.id)
+        let config = ServerConfig(
+            id: serverID,
+            name: session.displayName,
+            baseURLString: baseURLString,
+            authKind: .bearer
+        )
+        korbo.servers.save(config, secret: token)
+        await korbo.connect()
+    }
+
     /// Poll the instance state briefly until it reports ready, then translate the
     /// backend's `workspaceRestore` / `workspaceRestoreStale` signal into a
     /// user-facing `workspaceNotice`. Entirely best-effort: any error or timeout
@@ -317,28 +396,102 @@ final class CloudStore: ObservableObject {
 
     // MARK: - Helpers
 
-    /// The cloud instance backing the currently-selected opencode server, if any.
-    /// Derived from the active `ServerConfig.id` via the `instance → serverID`
-    /// map, so it stays correct no matter how the server was selected (instance
-    /// picker, command palette, or the footer server menu). Reactive in practice
-    /// because connecting flips `KorboStore.status`, which redraws observers.
-    var connectedInstance: CloudInstance? {
-        guard let serverID = korbo?.servers.selectedServerID?.uuidString,
-              let instanceID = serverIDByInstance.first(where: { $0.value == serverID })?.key
-        else { return nil }
-        return instances.first { $0.id == instanceID }
+    /// The backend resource id (managed instance `inst-…` or self-hosted session
+    /// `byo-…`) backing the currently-selected opencode server, if any. Derived
+    /// from the active `ServerConfig.id` via the `resource → serverID` map, so it
+    /// stays correct no matter how the server was selected (instance picker,
+    /// command palette, or the footer server menu).
+    private var connectedResourceID: String? {
+        guard let serverID = korbo?.servers.selectedServerID?.uuidString else { return nil }
+        return serverIDByResource.first(where: { $0.value == serverID })?.key
     }
 
-    /// Return a stable `ServerConfig.id` for an instance, persisting newly
-    /// minted UUIDs so the Keychain bearer entry is reused across reconnects.
-    private func stableServerID(for instanceID: String) -> UUID {
-        if let existing = serverIDByInstance[instanceID], let uuid = UUID(uuidString: existing) {
+    /// The managed cloud instance backing the currently-selected opencode server,
+    /// if any. Classified by membership in `instances` (robust to id format) and
+    /// mutually exclusive with `connectedSession` because instance/session id
+    /// spaces don't overlap. Reactive in practice because connecting flips
+    /// `KorboStore.status`, which redraws observers.
+    var connectedInstance: CloudInstance? {
+        guard let id = connectedResourceID else { return nil }
+        return instances.first { $0.id == id }
+    }
+
+    /// The self-hosted (BYO) session backing the currently-selected opencode
+    /// server, if any. Classified by membership in `sessions`, mutually exclusive
+    /// with `connectedInstance`.
+    var connectedSession: CloudSession? {
+        guard let id = connectedResourceID else { return nil }
+        return sessions.first { $0.id == id }
+    }
+
+    /// A short label for whatever cloud resource is currently connected (managed
+    /// instance or self-hosted session), or `nil` when connected to a plain
+    /// local/LAN server. Lets shared UI render a single "connected to" affordance.
+    var connectedDisplayName: String? {
+        connectedInstance?.displayName ?? connectedSession?.displayName
+    }
+
+    /// True when the active opencode server is a managed instance or a self-hosted
+    /// session (as opposed to a manually-configured local/LAN server).
+    var isConnectedToCloudResource: Bool {
+        connectedResourceID != nil
+    }
+
+    /// Return a stable `ServerConfig.id` for a cloud resource (instance or
+    /// session), persisting newly minted UUIDs so the Keychain bearer entry is
+    /// reused across reconnects.
+    private func stableServerID(for resourceID: String) -> UUID {
+        if let existing = serverIDByResource[resourceID], let uuid = UUID(uuidString: existing) {
             return uuid
         }
         let uuid = UUID()
-        serverIDByInstance[instanceID] = uuid.uuidString
-        UserDefaults.standard.set(serverIDByInstance, forKey: Self.serverIDMapKey)
+        serverIDByResource[resourceID] = uuid.uuidString
+        UserDefaults.standard.set(serverIDByResource, forKey: Self.serverIDMapKey)
         return uuid
+    }
+
+    /// Tear down the saved `ServerConfig` for a cloud resource: remove the server
+    /// (and its Keychain secret) and forget the id mapping. Used when a self-hosted
+    /// session is deleted so the app isn't left selected to a dead proxy.
+    private func cleanupServer(forResourceID resourceID: String) {
+        guard let serverIDString = serverIDByResource[resourceID],
+              let serverID = UUID(uuidString: serverIDString) else { return }
+        if let config = korbo?.servers.servers.first(where: { $0.id == serverID }) {
+            korbo?.servers.remove(config)
+        }
+        serverIDByResource[resourceID] = nil
+        UserDefaults.standard.set(serverIDByResource, forKey: Self.serverIDMapKey)
+    }
+
+    /// Validate a backend-supplied `proxyHost` and build the opencode base URL.
+    /// The contract specifies a bare host (no scheme, userinfo, port, path, query,
+    /// or whitespace); anything else is rejected rather than constructing a
+    /// malformed or foreign URL. Building via `URLComponents` and asserting the
+    /// parsed host equals the input closes host-spoofing tricks like
+    /// `good.host@evil.com` (whose real host is `evil.com`), which would otherwise
+    /// leak the bearer token to an attacker-controlled origin.
+    nonisolated static func sessionBaseURLString(for proxyHost: String) -> String? {
+        let host = proxyHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty,
+              host.contains("."),
+              host.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              !host.contains("://"),
+              !host.contains("/"),
+              !host.contains("@"),
+              !host.contains("?"),
+              !host.contains("#")
+        else { return nil }
+        guard let components = URLComponents(string: "https://\(host)"),
+              components.host == host,
+              components.user == nil,
+              components.password == nil,
+              components.port == nil,
+              components.path.isEmpty,
+              components.query == nil,
+              components.fragment == nil,
+              let url = components.url
+        else { return nil }
+        return url.absoluteString
     }
 
     private func setError(_ error: Error) {
