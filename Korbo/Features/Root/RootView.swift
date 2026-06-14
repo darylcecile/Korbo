@@ -56,6 +56,10 @@ struct RootView: View {
                 ShortcutsCheatSheet()
                     .environmentObject(app)
             }
+            .fullScreenCover(isPresented: $app.showOnboarding) {
+                OnboardingView()
+                    .environmentObject(app)
+            }
             .userActivity(Handoff.sessionActivityType, isActive: store.selectedSessionID != nil) { activity in
                 store.decorateHandoff(activity)
             }
