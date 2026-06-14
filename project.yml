@@ -1,6 +1,6 @@
 name: Korbo
 options:
-  bundleIdPrefix: ai.korbo
+  bundleIdPrefix: app.korbo
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
@@ -30,7 +30,7 @@ targets:
           - "Info.plist"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.Korbo
+        PRODUCT_BUNDLE_IDENTIFIER: app.korbo.ios
         IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Korbo/Info.plist
@@ -60,7 +60,7 @@ targets:
       - path: Korbo/Shared/KorboActivityAttributes.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.Korbo.KorboWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: app.korbo.ios.KorboWidgets
         IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         INFOPLIST_FILE: KorboWidgets/Info.plist
         CURRENT_PROJECT_VERSION: "1"
@@ -76,7 +76,7 @@ targets:
       - target: Korbo
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.korbo.KorboTests
+        PRODUCT_BUNDLE_IDENTIFIER: app.korbo.ios.KorboTests
         IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         GENERATE_INFOPLIST_FILE: YES
 

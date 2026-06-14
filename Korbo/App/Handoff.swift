@@ -11,7 +11,7 @@ import Foundation
 /// app's Info.plist for the system to route incoming activities to us.
 enum Handoff {
     /// Reverse-DNS activity type, matched in Info.plist `NSUserActivityTypes`.
-    static let sessionActivityType = "ai.korbo.Korbo.session"
+    static let sessionActivityType = "app.korbo.ios.session"
 
     enum Key {
         static let sessionID = "sessionID"
