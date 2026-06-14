@@ -59,6 +59,7 @@ struct RootView: View {
             .fullScreenCover(isPresented: $app.showOnboarding) {
                 OnboardingView()
                     .environmentObject(app)
+                    .environmentObject(cloud)
             }
             .userActivity(Handoff.sessionActivityType, isActive: store.selectedSessionID != nil) { activity in
                 store.decorateHandoff(activity)
