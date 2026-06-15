@@ -10,6 +10,11 @@ struct ChatPane: View {
     @State private var showPhotoPicker = false
     @State private var showFileImporter = false
     @State private var isPinnedToBottom = true
+    /// The session id whose transcript we've already jumped to the bottom for.
+    /// Drives a one-time scroll-to-end when a session's backlog first appears, so
+    /// reopening an existing long session lands on the latest message instead of
+    /// stranded at the very top.
+    @State private var initialScrollDoneFor: String?
     @State private var isExpandedComposer = false
     @State private var isDropTargeted = false
     @FocusState private var composerFocused: Bool
@@ -538,8 +543,22 @@ struct ChatPane: View {
                             isPinnedToBottom = maxY <= outer.size.height + 80
                         }
                         .onChange(of: streamSignature) { _, _ in
+                            // A freshly-opened session: jump straight to the end
+                            // once before falling back to the pinned-scroll path.
+                            if scrollToBottomOnOpen(proxy) { return }
                             guard isPinnedToBottom else { return }
                             withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .onChange(of: store.selectedSessionID) { _, _ in
+                            // Re-arm the one-time scroll for the next session.
+                            initialScrollDoneFor = nil
+                        }
+                        .onAppear {
+                            // When the transcript appears with a backlog already
+                            // loaded (app relaunch, or switching to a cached
+                            // session) no streamSignature change fires, so do the
+                            // initial scroll-to-end here too.
+                            scrollToBottomOnOpen(proxy)
                         }
                         .onChange(of: searchScrollTick) { _, _ in
                             guard let target = currentMatchID else { return }
@@ -616,6 +635,24 @@ struct ChatPane: View {
     private var streamSignature: String {
         let chars = store.messages.last?.parts.reduce(0) { $0 + ($1.text?.count ?? 0) } ?? 0
         return "\(store.messages.count)-\(chars)-\(store.isGenerating)"
+    }
+
+    /// Jump to the latest message the first time a session's backlog is shown.
+    ///
+    /// The live auto-scroll is gated on `isPinnedToBottom`, which is `false` for a
+    /// long conversation that loads scrolled to the top — so without this an
+    /// existing session reopens stranded at its very first message. Runs at most
+    /// once per session (tracked by `initialScrollDoneFor`); the async second pass
+    /// corrects any underscroll once the lazy rows above the sentinel are measured.
+    /// Returns whether it performed the initial scroll.
+    @discardableResult
+    private func scrollToBottomOnOpen(_ proxy: ScrollViewProxy) -> Bool {
+        guard initialScrollDoneFor != store.selectedSessionID, !store.messages.isEmpty else { return false }
+        initialScrollDoneFor = store.selectedSessionID
+        isPinnedToBottom = true
+        proxy.scrollTo("bottom", anchor: .bottom)
+        DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
+        return true
     }
 
     private func centeredHint(icon: String, title: String, subtitle: String) -> some View {
