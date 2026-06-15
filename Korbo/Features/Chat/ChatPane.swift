@@ -43,6 +43,8 @@ struct ChatPane: View {
 
     // PencilKit sketch
     @State private var showScribbleSheet = false
+    // Image attachment currently being marked up (drives the markup sheet).
+    @State private var markupTarget: ComposerAttachment?
 
     // Voice dictation
     @ObservedObject private var speech = SpeechController.shared
@@ -814,13 +816,21 @@ struct ChatPane: View {
                 attachSketch(image)
             }
         }
+        .sheet(item: $markupTarget) { target in
+            if let base = target.decodedImage {
+                ScribbleSheet(backgroundImage: base) { annotated in
+                    replaceWithMarkup(target, annotated: annotated)
+                }
+            }
+        }
     }
 
     private var attachmentStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
-                    AttachmentChip(attachment: attachment) {
+                    AttachmentChip(attachment: attachment,
+                                   onMarkup: attachment.isImage ? { markupTarget = attachment } : nil) {
                         attachments.removeAll { $0.id == attachment.id }
                     }
                 }
@@ -1122,6 +1132,16 @@ struct ChatPane: View {
         attachments.append(ComposerAttachment(filename: filename, mime: "image/jpeg", dataURL: dataURL))
     }
 
+    /// Replace an existing image attachment with its marked-up version, in place.
+    private func replaceWithMarkup(_ original: ComposerAttachment, annotated: UIImage) {
+        guard let jpeg = annotated.jpegData(compressionQuality: 0.85),
+              let index = attachments.firstIndex(where: { $0.id == original.id }) else { return }
+        let dataURL = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
+        let base = (original.filename as NSString).deletingPathExtension
+        let name = base.hasSuffix("-markup") ? original.filename : "\(base)-markup.jpg"
+        attachments[index] = ComposerAttachment(filename: name, mime: "image/jpeg", dataURL: dataURL)
+    }
+
     // MARK: Dictation
 
     private func toggleDictation() {
@@ -1136,15 +1156,10 @@ struct ChatPane: View {
 /// A removable chip for a staged composer attachment (image thumbnail or file icon).
 private struct AttachmentChip: View {
     let attachment: ComposerAttachment
+    var onMarkup: (() -> Void)?
     let onRemove: () -> Void
 
-    private var thumbnail: UIImage? {
-        guard attachment.mime.hasPrefix("image/"),
-              let comma = attachment.dataURL.firstIndex(of: ","),
-              let data = Data(base64Encoded: String(attachment.dataURL[attachment.dataURL.index(after: comma)...]))
-        else { return nil }
-        return UIImage(data: data)
-    }
+    private var thumbnail: UIImage? { attachment.decodedImage }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1163,6 +1178,15 @@ private struct AttachmentChip: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
+            if let onMarkup, attachment.isImage {
+                Button(action: onMarkup) {
+                    Image(systemName: "pencil.tip.crop.circle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Mark up \(attachment.filename)")
+            }
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))
@@ -1174,6 +1198,19 @@ private struct AttachmentChip: View {
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.panel))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+    }
+}
+
+extension ComposerAttachment {
+    var isImage: Bool { mime.hasPrefix("image/") }
+
+    /// Decode the base64 data URL back into a `UIImage` (image attachments only).
+    var decodedImage: UIImage? {
+        guard isImage,
+              let comma = dataURL.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
+        else { return nil }
+        return UIImage(data: data)
     }
 }
 
