@@ -151,6 +151,12 @@ final class KorboStore: ObservableObject {
 
     private var client: OpencodeClient?
     private var eventTask: Task<Void, Never>?
+    /// Backstop that reconciles in-flight sessions from REST when the event stream
+    /// goes silent (see `startWatchdog`).
+    private var watchdogTask: Task<Void, Never>?
+    /// Wall-clock time of the most recent event-stream frame. The watchdog compares
+    /// against this to spot a silently-stalled stream.
+    private var lastEventAt = Date()
     private var fileSearchTask: Task<Void, Never>?
     private var fileReloadTask: Task<Void, Never>?
     /// Serializes connection operations (`connect`/`switchProject`). Because
@@ -276,6 +282,8 @@ final class KorboStore: ObservableObject {
     private func teardown() async {
         eventTask?.cancel()
         eventTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
         fileSearchTask?.cancel()
         fileSearchTask = nil
         activeSessionIDs.removeAll()
@@ -1545,25 +1553,94 @@ final class KorboStore: ObservableObject {
     private func startEventStream() {
         guard let client else { return }
         eventTask?.cancel()
+        lastEventAt = Date()
         eventTask = Task { [weak self] in
             var backoff: UInt64 = 1
+            var reconnecting = false
             while !Task.isCancelled {
+                // After a drop/stall, reconcile in-flight sessions from REST before
+                // resubscribing: `/global/event` is live-only (no replay), so any
+                // frames sent while we were disconnected — including the terminal
+                // `session.idle` — are gone and would otherwise leave the UI stuck.
+                if reconnecting, let self { await self.reconcileActiveSessions() }
                 do {
                     for try await event in client.events() {
                         self?.handle(event)
                         backoff = 1
                     }
                 } catch {
-                    // stream dropped; fall through to reconnect with backoff
+                    // stream dropped (including the idle-timeout firing on a stalled
+                    // connection); fall through to reconnect with backoff
                 }
                 if Task.isCancelled { break }
+                reconnecting = true
                 try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
                 backoff = min(backoff * 2, 30)
             }
         }
+        startWatchdog()
+    }
+
+    /// Guards against a silently-stalled event stream. While a run is active, if no
+    /// frame has arrived for `stallThreshold` seconds, it reconciles the active
+    /// session(s) from REST so the response — and the fact that the run finished —
+    /// surfaces even when live frames stopped flowing (the bug where a run looked
+    /// "stuck loading" until the user hit Stop). Dormant and effectively free
+    /// whenever the stream is healthy or nothing is running.
+    private func startWatchdog() {
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            let stallThreshold: TimeInterval = 12
+            let minReconcileGap: TimeInterval = 10
+            var lastReconcile = Date.distantPast
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                guard !self.activeSessionIDs.isEmpty else { continue }
+                let now = Date()
+                if now.timeIntervalSince(self.lastEventAt) >= stallThreshold,
+                   now.timeIntervalSince(lastReconcile) >= minReconcileGap {
+                    lastReconcile = now
+                    await self.reconcileActiveSessions()
+                }
+            }
+        }
+    }
+
+    /// Re-fetch messages for every active session and resolve any whose run has
+    /// actually finished, so a missed `session.idle`/error event can't leave the UI
+    /// stuck "loading". Only the on-screen session's transcript is updated.
+    private func reconcileActiveSessions() async {
+        guard client != nil else { return }
+        for sid in activeSessionIDs {
+            await reconcileSession(sid)
+        }
+    }
+
+    private func reconcileSession(_ sessionID: String) async {
+        guard let client else { return }
+        let items: [OCMessageItem]
+        do {
+            items = try await client.listMessages(sessionID: sessionID)
+        } catch {
+            return  // transient REST failure; the watchdog will retry on its next tick
+        }
+        // Refresh the visible transcript only when this is the selected session.
+        if sessionID == selectedSessionID {
+            messages = items
+        }
+        // If the latest message is a finished assistant turn, the run is over —
+        // clear the active/loading state even though we never saw the terminal event.
+        guard let last = items.last, last.info.role == .assistant else { return }
+        if last.info.error != nil {
+            markFailed(sessionID)
+        } else if last.info.completedAt != nil {
+            markIdle(sessionID)
+        }
     }
 
     private func handle(_ event: OCEvent) {
+        lastEventAt = Date()
         guard let type = OCEventType(rawValue: event.type) else { return }
         let props = event.properties
         switch type {
@@ -1635,17 +1712,7 @@ final class KorboStore: ObservableObject {
             let rid = props["requestID"]?.stringValue ?? props["id"]?.stringValue
             if let rid { pendingQuestions.removeAll { $0.id == rid } }
         case .sessionError:
-            if let sid = props["sessionID"]?.stringValue {
-                let wasActive = activeSessionIDs.contains(sid)
-                activeSessionIDs.remove(sid)
-                if wasActive {
-                    NotificationManager.shared.notify(
-                        title: "Run failed",
-                        body: "\(sessionTitle(sid)) ran into an error")
-                }
-                LiveActivityController.shared.end(status: "Failed")
-                if activeSessionIDs.isEmpty { NotificationManager.shared.endBackgroundGrace() }
-            }
+            if let sid = props["sessionID"]?.stringValue { markFailed(sid) }
         case .serverConnected:
             break // handled in later milestones
         case .fileEdited:
@@ -1676,6 +1743,21 @@ final class KorboStore: ObservableObject {
         if sessionID == selectedSessionID {
             Task { [weak self] in await self?.loadMessages(sessionID: sessionID) }
         }
+    }
+
+    /// Mark a session's run as failed and clear its active/loading state. Mirrors
+    /// the `.sessionError` event so the watchdog can resolve a stuck run when the
+    /// error frame itself was missed.
+    private func markFailed(_ sessionID: String) {
+        let wasActive = activeSessionIDs.contains(sessionID)
+        activeSessionIDs.remove(sessionID)
+        if wasActive {
+            NotificationManager.shared.notify(
+                title: "Run failed",
+                body: "\(sessionTitle(sessionID)) ran into an error")
+        }
+        LiveActivityController.shared.end(status: "Failed")
+        if activeSessionIDs.isEmpty { NotificationManager.shared.endBackgroundGrace() }
     }
 
     /// A session just started (or is continuing) a run. Tracks it as active and,
