@@ -437,6 +437,14 @@ final class CloudStore: ObservableObject {
         connectedResourceID != nil
     }
 
+    /// `ServerConfig.id`s (as strings) backing an **online** self-hosted session
+    /// currently in `sessions`. The footer server menu lists these sessions in a
+    /// dedicated "Tunnels" section, so the plain-server list hides their saved
+    /// configs to avoid a confusing duplicate row for the same session.
+    var onlineSessionServerIDs: Set<String> {
+        Set(sessions.filter { $0.status.isOnline }.compactMap { serverIDByResource[$0.id] })
+    }
+
     /// Return a stable `ServerConfig.id` for a cloud resource (instance or
     /// session), persisting newly minted UUIDs so the Keychain bearer entry is
     /// reused across reconnects.

@@ -36,7 +36,15 @@ struct KorboApp: App {
                     Task { await handleIntent(pending) }
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { store.reconcileLiveActivitiesOnForeground() }
+                    if phase == .active {
+                        store.reconcileLiveActivitiesOnForeground()
+                        // A self-hosted session started via `korbo up` while the app
+                        // was backgrounded won't surface until we re-list, so refresh
+                        // on foreground to keep the cloud switcher current.
+                        if cloud.isSignedIn {
+                            Task { await cloud.refreshSessions() }
+                        }
+                    }
                 }
         }
 
