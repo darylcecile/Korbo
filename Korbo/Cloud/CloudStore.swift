@@ -331,7 +331,8 @@ final class CloudStore: ObservableObject {
             id: serverID,
             name: session.displayName,
             baseURLString: baseURLString,
-            authKind: .bearer
+            authKind: .bearer,
+            usesServerDefaultProject: true
         )
         korbo.servers.save(config, secret: token)
         await korbo.connect()

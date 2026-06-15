@@ -28,6 +28,16 @@ struct ServerConfig: Codable, Hashable, Identifiable {
     var username: String = ""
     var extraHeaders: [String: String] = [:]
 
+    /// When set, Korbo never restores a remembered project `directory` for this
+    /// server — it always scopes to whatever project the server is currently
+    /// serving. Set for BYO tunnels (`korbo up`), whose working directory is
+    /// chosen server-side at launch and can change between runs, so it can't be
+    /// known — or meaningfully remembered — by the app ahead of time. A stale
+    /// remembered directory would scope `GET /session` to an empty list and
+    /// strand the user on "No sessions yet" after a relaunch. Optional so configs
+    /// persisted by older builds (which lack the key) still decode.
+    var usesServerDefaultProject: Bool? = nil
+
     var baseURL: URL? { URL(string: normalizedURLString) }
 
     /// Adds a scheme if the user omitted one (defaults to https for remote hosts,

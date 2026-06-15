@@ -195,7 +195,7 @@ final class KorboStore: ObservableObject {
         status = .connecting
         lastError = nil
 
-        let restored = restoreSelectedProject(for: server.id)
+        let restored = restoredProjectDirectory(for: server)
         selectedProjectDirectory = restored
         // Keep the spinner up on the first attempt only when a default-project
         // fallback is still available, so a recoverable saved-directory failure
@@ -203,14 +203,14 @@ final class KorboStore: ObservableObject {
         if await establish(server: server, directory: restored,
                            keepConnectingOnFailure: restored != nil) {
             // The connection is healthy, but a persisted project can outlive the
-            // sessions it scoped to — most often a BYO tunnel restarted from a
-            // different working directory, so the server now serves its sessions
-            // under a different project. opencode answers
-            // `GET /session?directory=<stale>` with an empty list (HTTP 200, not
-            // an error), which would strand the user on a blank sidebar that no
-            // refresh can fix. Detect that — connected, but the saved project
-            // yields nothing — and fall back to the server default (its current
-            // project), forgetting the stale selection so it self-heals.
+            // sessions it scoped to — e.g. a managed server stopped hosting that
+            // sandbox. opencode answers `GET /session?directory=<stale>` with an
+            // empty list (HTTP 200, not an error), which would strand the user on
+            // a blank sidebar that no refresh can fix. Detect that — connected,
+            // but the saved project yields nothing — and fall back to the server
+            // default (its current project), forgetting the stale selection so it
+            // self-heals. (BYO tunnels never reach here: `restoredProjectDirectory`
+            // returns nil for them, so they always start from the server default.)
             if restored != nil, sessions.isEmpty {
                 selectedProjectDirectory = nil
                 if await establish(server: server, directory: nil), !sessions.isEmpty {
@@ -416,6 +416,17 @@ final class KorboStore: ObservableObject {
         guard let serverID else { return nil }
         let map = UserDefaults.standard.dictionary(forKey: Self.selectedProjectKey) as? [String: String] ?? [:]
         return map[serverID.uuidString]
+    }
+
+    /// The project directory to scope the initial connection to. BYO tunnels
+    /// opt out of the remembered-directory mechanism entirely (their working
+    /// directory is decided server-side at `korbo up` time and a stale saved
+    /// value scopes `GET /session` to an empty list); for them we always start
+    /// from the server's current project. Everyone else restores their saved
+    /// selection as before.
+    private func restoredProjectDirectory(for server: ServerConfig) -> String? {
+        if server.usesServerDefaultProject == true { return nil }
+        return restoreSelectedProject(for: server.id)
     }
 
     private func persistSelectedProject(_ directory: String?, for serverID: UUID?) {
