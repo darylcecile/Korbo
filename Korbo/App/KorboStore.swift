@@ -196,6 +196,26 @@ final class KorboStore: ObservableObject {
         // doesn't flash a terminal error before we retry.
         if await establish(server: server, directory: restored,
                            keepConnectingOnFailure: restored != nil) {
+            // The connection is healthy, but a persisted project can outlive the
+            // sessions it scoped to — most often a BYO tunnel restarted from a
+            // different working directory, so the server now serves its sessions
+            // under a different project. opencode answers
+            // `GET /session?directory=<stale>` with an empty list (HTTP 200, not
+            // an error), which would strand the user on a blank sidebar that no
+            // refresh can fix. Detect that — connected, but the saved project
+            // yields nothing — and fall back to the server default (its current
+            // project), forgetting the stale selection so it self-heals.
+            if restored != nil, sessions.isEmpty {
+                selectedProjectDirectory = nil
+                if await establish(server: server, directory: nil), !sessions.isEmpty {
+                    persistSelectedProject(nil, for: server.id)
+                    return
+                }
+                // The default is empty too: a genuinely empty server, not a stale
+                // selection. Restore the user's choice and reconnect to it.
+                selectedProjectDirectory = restored
+                await establish(server: server, directory: restored)
+            }
             return
         }
         // A persisted project directory can become invalid (the server stopped
