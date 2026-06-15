@@ -777,7 +777,10 @@ struct ChatPane: View {
                     reasoningMenu
                     if store.isGenerating {
                         Button { Task { await store.abort() } } label: {
-                            Image(systemName: "stop.fill").foregroundStyle(Theme.removed)
+                            Image(systemName: "stop.fill")
+                                .foregroundStyle(Theme.removed)
+                                .frame(width: 30, height: 30)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Stop generation")
@@ -785,6 +788,8 @@ struct ChatPane: View {
                         Button { send() } label: {
                             Image(systemName: "paperplane.fill")
                                 .foregroundStyle(canSubmit ? Theme.accent : Theme.textTertiary)
+                                .frame(width: 30, height: 30)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .disabled(!canSubmit)
