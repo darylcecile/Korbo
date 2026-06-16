@@ -108,6 +108,13 @@ actor OpencodeClient {
         try await getJSON("/project/current")
     }
 
+    /// `GET /path` — the server's resolved paths. `directory` is the real
+    /// working directory opencode stores sessions against; we scope to it when
+    /// no project is explicitly selected (see `OCPath`).
+    func getPath() async throws -> OCPath {
+        try await getJSON("/path")
+    }
+
     /// `GET /session` — list sessions for the connected instance.
     func listSessions() async throws -> [OCSession] {
         try await getJSON("/session")

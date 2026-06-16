@@ -210,7 +210,8 @@ final class KorboStore: ObservableObject {
             // but the saved project yields nothing — and fall back to the server
             // default (its current project), forgetting the stale selection so it
             // self-heals. (BYO tunnels never reach here: `restoredProjectDirectory`
-            // returns nil for them, so they always start from the server default.)
+            // returns nil for them, so `establish` resolves their working directory
+            // from `GET /path` rather than a remembered value.)
             if restored != nil, sessions.isEmpty {
                 selectedProjectDirectory = nil
                 if await establish(server: server, directory: nil), !sessions.isEmpty {
@@ -250,7 +251,7 @@ final class KorboStore: ObservableObject {
     private func establish(server: ServerConfig, directory: String?,
                            keepConnectingOnFailure: Bool = false) async -> Bool {
         await teardown()
-        let client = OpencodeClient(config: server, directory: directory)
+        var client = OpencodeClient(config: server, directory: directory)
         self.client = client
 
         do {
@@ -258,6 +259,24 @@ final class KorboStore: ObservableObject {
             guard ok else {
                 if !keepConnectingOnFailure { status = .failed("Server health check failed") }
                 return false
+            }
+            // With no explicit project selected, scope to the server's *actual*
+            // working directory instead of leaving requests unscoped. opencode
+            // stores every session against the exact cwd it was started in; when
+            // that cwd isn't a git worktree (e.g. a BYO tunnel launched in $HOME),
+            // `GET /project/current` reports a synthetic root project (worktree
+            // "/") whose `?directory=/` matches no sessions — so the sidebar comes
+            // up empty on relaunch even though the sessions exist. `GET /path`
+            // reports the real `directory`, which is both where sessions live and
+            // where we create new ones, keeping list and create consistent. Older
+            // servers without `/path`, or a degenerate "/" cwd, fall through to the
+            // previous unscoped behaviour.
+            if directory == nil,
+               let resolved = try? await client.getPath().directory,
+               !resolved.isEmpty, resolved != "/" {
+                client = OpencodeClient(config: server, directory: resolved)
+                self.client = client
+                selectedProjectDirectory = resolved
             }
             status = .connected
             await loadProjects()
@@ -421,9 +440,9 @@ final class KorboStore: ObservableObject {
     /// The project directory to scope the initial connection to. BYO tunnels
     /// opt out of the remembered-directory mechanism entirely (their working
     /// directory is decided server-side at `korbo up` time and a stale saved
-    /// value scopes `GET /session` to an empty list); for them we always start
-    /// from the server's current project. Everyone else restores their saved
-    /// selection as before.
+    /// value scopes `GET /session` to an empty list); for them we return nil so
+    /// `establish` resolves the server's live working directory from `GET /path`.
+    /// Everyone else restores their saved selection as before.
     private func restoredProjectDirectory(for server: ServerConfig) -> String? {
         if server.usesServerDefaultProject == true { return nil }
         return restoreSelectedProject(for: server.id)
