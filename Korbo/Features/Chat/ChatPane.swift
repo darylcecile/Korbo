@@ -98,13 +98,17 @@ struct ChatPane: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            if app.layoutMode.isCompact {
-                Button { app.toggleSessionsDrawer() } label: {
-                    Image(systemName: "sidebar.left")
+            Button {
+                if app.layoutMode.isCompact {
+                    app.toggleSessionsDrawer()
+                } else {
+                    app.toggleLeftSidebar()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Toggle sessions sidebar")
+            } label: {
+                Image(systemName: "sidebar.left")
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Toggle sessions sidebar")
 
             contextRing
 

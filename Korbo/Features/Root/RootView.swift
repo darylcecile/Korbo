@@ -17,10 +17,18 @@ struct RootView: View {
             ZStack {
                 baseLayout(mode, width: geo.size.width)
                 drawerOverlays(mode, width: geo.size.width)
+                leftEdgeRevealGesture(mode)
                 ConnectionBanner()
                     .zIndex(8)
                 WorkspaceNoticeBanner()
                     .zIndex(8)
+                if case .failed = store.status {
+                    ConnectionFailureView()
+                        .environmentObject(app)
+                        .environmentObject(store)
+                        .transition(.opacity)
+                        .zIndex(9)
+                }
                 if app.showCommandPalette {
                     CommandPalette()
                         .transition(.opacity)
@@ -30,8 +38,10 @@ struct RootView: View {
             .background(Theme.bg)
             .ignoresSafeArea(.container, edges: .bottom)
             .foregroundStyle(Theme.textPrimary)
+            .animation(.easeInOut(duration: 0.2), value: app.showLeftSidebar)
             .animation(.easeInOut(duration: 0.2), value: app.showRightSidebar)
             .animation(.easeInOut(duration: 0.2), value: app.sessionsDrawerOpen)
+            .animation(.easeInOut(duration: 0.2), value: store.status)
             .animation(.easeOut(duration: 0.15), value: app.showCommandPalette)
             .background(GlobalShortcuts())
             .onAppear { app.updateLayout(forWidth: geo.size.width) }
@@ -46,6 +56,11 @@ struct RootView: View {
                     .environmentObject(app)
                     .environmentObject(store)
                     .environmentObject(cloud)
+            }
+            .sheet(isPresented: $app.showInstancePicker) {
+                InstancePickerView()
+                    .environmentObject(cloud)
+                    .environmentObject(app)
             }
             .sheet(isPresented: $app.showSettingsSheet) {
                 SettingsView()
@@ -76,7 +91,7 @@ struct RootView: View {
     @ViewBuilder
     private func baseLayout(_ mode: AppModel.LayoutMode, width: CGFloat) -> some View {
         HStack(spacing: 0) {
-            if !mode.isCompact {
+            if !mode.isCompact && app.showLeftSidebar {
                 SessionsSidebar()
                     .frame(width: mode.isWide ? app.sessionsPaneWidth : 280)
                 if mode.isWide {
@@ -104,6 +119,29 @@ struct RootView: View {
                     .frame(width: app.contextPaneInlineWidth(available: width))
                     .transition(.move(edge: .trailing))
             }
+        }
+    }
+
+    @ViewBuilder
+    private func leftEdgeRevealGesture(_ mode: AppModel.LayoutMode) -> some View {
+        if !mode.isCompact && !app.showLeftSidebar {
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 16)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 12)
+                            .onEnded { value in
+                                if value.translation.width > 40 {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        app.showLeftSidebar = true
+                                    }
+                                }
+                            }
+                    )
+                Spacer(minLength: 0)
+            }
+            .zIndex(7)
         }
     }
 
@@ -154,21 +192,20 @@ struct RootView: View {
     }
 }
 
-/// A thin top banner that surfaces non-connected states (connecting / failed /
-/// disconnected) with a one-tap retry. Hidden entirely while connected so it
-/// never steals space from the panes.
+/// A thin top banner that surfaces transient non-connected states. Hidden while
+/// connected or failed so it never competes with the connection failure screen.
 private struct ConnectionBanner: View {
     @EnvironmentObject private var store: KorboStore
-    @State private var retrying = false
 
     var body: some View {
         VStack(spacing: 0) {
-            if !store.status.isConnected {
+            if showsBanner {
                 banner
                     .transition(.move(edge: .top).combined(with: .opacity))
                 Spacer(minLength: 0)
             }
         }
+        .allowsHitTesting(false)
         .animation(.easeInOut(duration: 0.2), value: store.status)
     }
 
@@ -187,22 +224,6 @@ private struct ConnectionBanner: View {
                 }
             }
             Spacer(minLength: 8)
-            if showsRetry {
-                Button {
-                    guard !retrying else { return }
-                    retrying = true
-                    Task {
-                        await store.connect()
-                        retrying = false
-                    }
-                } label: {
-                    Text(retrying ? "Retrying…" : "Retry")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-                .buttonStyle(.plain)
-                .disabled(retrying)
-            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -215,9 +236,6 @@ private struct ConnectionBanner: View {
         switch store.status {
         case .connecting:
             ProgressView().controlSize(.small)
-        case .failed:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Theme.removed)
         default:
             Image(systemName: "wifi.slash")
                 .foregroundStyle(Theme.textSecondary)
@@ -227,9 +245,8 @@ private struct ConnectionBanner: View {
     private var title: String {
         switch store.status {
         case .connecting: return "Connecting…"
-        case .failed: return "Connection failed"
         case .disconnected: return "Disconnected"
-        case .connected: return ""
+        case .connected, .failed: return ""
         }
     }
 
@@ -238,11 +255,169 @@ private struct ConnectionBanner: View {
         return store.lastError
     }
 
-    private var showsRetry: Bool {
+    private var showsBanner: Bool {
         switch store.status {
-        case .failed, .disconnected: return true
-        case .connecting, .connected: return false
+        case .connecting, .disconnected: return true
+        case .connected, .failed: return false
         }
+    }
+}
+
+struct ConnectionFailureView: View {
+    @EnvironmentObject var app: AppModel
+    @EnvironmentObject var store: KorboStore
+    @State private var retrying = false
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                background
+                ScrollView {
+                    VStack(spacing: 24) {
+                        VStack(spacing: 14) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 42, weight: .semibold))
+                                .foregroundStyle(Theme.removed)
+                            Text(title)
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .foregroundStyle(Theme.textPrimary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(reason)
+                                .font(.system(size: 17))
+                                .foregroundStyle(Theme.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        VStack(spacing: 12) {
+                            accentCapsuleButton("Try again", busy: retrying) {
+                                guard !retrying else { return }
+                                retrying = true
+                                Task {
+                                    await store.connect()
+                                    retrying = false
+                                }
+                            }
+                            connectCard(icon: "rectangle.2.swap",
+                                        title: "Choose a different instance",
+                                        subtitle: "Switch to another cloud instance or one of your machines",
+                                        prominent: false) {
+                                app.showInstancePicker = true
+                            }
+                            connectCard(icon: "slider.horizontal.3",
+                                        title: "Configure connection",
+                                        subtitle: "Edit the server URL, authentication, or saved servers",
+                                        prominent: false) {
+                                app.showConnectionSheet = true
+                            }
+                        }
+                    }
+                    .padding(.vertical, 40)
+                    .frame(minHeight: geo.size.height)
+                    .readableColumn()
+                }
+            }
+        }
+    }
+
+    private var background: some View {
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+            RadialGradient(colors: [Theme.accent.opacity(0.18), .clear],
+                           center: .top, startRadius: 0, endRadius: 540)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var title: String {
+        if let name = store.servers.selectedServer?.name, !name.isEmpty {
+            return "Can’t reach \(name)"
+        }
+        return "Connection failed"
+    }
+
+    private var reason: String {
+        if case .failed(let message) = store.status, !message.isEmpty {
+            return message
+        }
+        if let error = store.lastError, !error.isEmpty {
+            return error
+        }
+        return "Korbo couldn’t connect to the selected opencode server."
+    }
+
+    private func accentCapsuleButton(_ title: String,
+                                     busy: Bool = false,
+                                     action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack {
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Self.onAccent)
+                    .opacity(busy ? 0 : 1)
+                if busy {
+                    ProgressView().tint(Self.onAccent)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Capsule().fill(Theme.accent))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+    }
+
+    private func connectCard(icon: String,
+                             title: String,
+                             subtitle: String,
+                             prominent: Bool,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(prominent ? Self.onAccent : Theme.accent)
+                    .frame(width: 30)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(prominent ? Self.onAccent : Theme.textPrimary)
+                    Text(subtitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(prominent ? Self.onAccent.opacity(0.75) : Theme.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(prominent ? Self.onAccent.opacity(0.5) : Theme.textTertiary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(prominent ? Theme.accent : Theme.panel)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(prominent ? Color.clear : Theme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private static let onAccent = Color(hex: 0x111114)
+}
+
+private extension View {
+    func readableColumn() -> some View {
+        self
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
     }
 }
 

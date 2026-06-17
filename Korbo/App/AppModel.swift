@@ -4,9 +4,11 @@ import SwiftUI
 /// this as the app is built out per the PRD.
 @MainActor
 final class AppModel: ObservableObject {
+    @Published var showLeftSidebar = true
     @Published var showRightSidebar = true
     @Published var rightTab: RightTab = .git
     @Published var showConnectionSheet = false
+    @Published var showInstancePicker = false
     @Published var showSettingsSheet = false
     /// Korbo Cloud management sheet (sign-in + provisioned instances).
     @Published var showCloudSheet = false
@@ -182,6 +184,7 @@ final class AppModel: ObservableObject {
     func showChat() { centerPane = .chat }
     func focusComposer() { focusComposerToken &+= 1 }
     func toggleSessionsDrawer() { sessionsDrawerOpen.toggle() }
+    func toggleLeftSidebar() { showLeftSidebar.toggle() }
 
     /// Apply a new width-derived layout mode, auto-collapsing side panels as the
     /// window narrows and restoring the context panel when it widens back out.

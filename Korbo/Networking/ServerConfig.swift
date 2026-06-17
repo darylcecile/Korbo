@@ -142,6 +142,17 @@ final class ServerStore: ObservableObject {
         persist()
     }
 
+    /// Update a saved server's display label in place — without changing the
+    /// current selection or its Keychain secret. Used when a cloud/tunnel session
+    /// is renamed so its persisted server config (shown in the connection footer
+    /// and failure screen) stays in sync with the new name.
+    func rename(id: UUID, to name: String) {
+        guard let idx = servers.firstIndex(where: { $0.id == id }),
+              servers[idx].name != name else { return }
+        servers[idx].name = name
+        persist()
+    }
+
     func select(_ id: UUID) {
         selectedServerID = id
         persist()

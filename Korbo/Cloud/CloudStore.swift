@@ -56,6 +56,20 @@ final class CloudStore: ObservableObject {
     private static let serverIDMapKey = "korbo.cloud.serverIDByInstance.v1"
     private var serverIDByResource: [String: String]
 
+    /// Device-local display-name overrides for self-hosted (BYO) sessions, keyed
+    /// by session id. The backend has no rename endpoint, so a custom tunnel name
+    /// lives only on this device; `aliased(_:)` overlays it onto the fetched list
+    /// so every `displayName` surface (picker, palette, sidebar, connected title)
+    /// reflects it.
+    private static let sessionAliasMapKey = "korbo.cloud.sessionAliasByID.v1"
+    private var sessionAliasByID: [String: String]
+
+    /// Raw, un-aliased session list as last fetched from the backend. `sessions`
+    /// is this with local aliases overlaid; keeping the backend truth here lets a
+    /// rename (or an alias clear) recompute instantly without a network round-trip
+    /// or losing the server-provided name.
+    private var rawSessions: [CloudSession] = []
+
     /// Maximum time to wait for a transitional instance to become ready.
     private let readinessTimeout: TimeInterval = 60
     private let readinessPollInterval: UInt64 = 2_000_000_000 // 2s in ns
@@ -72,6 +86,8 @@ final class CloudStore: ObservableObject {
         self.isSignedIn = tokenStore.isSignedIn
         self.serverIDByResource = UserDefaults.standard
             .dictionary(forKey: Self.serverIDMapKey) as? [String: String] ?? [:]
+        self.sessionAliasByID = UserDefaults.standard
+            .dictionary(forKey: Self.sessionAliasMapKey) as? [String: String] ?? [:]
     }
 
     /// Wire up the existing `KorboStore` so `connectToInstance` can drive the
@@ -147,6 +163,7 @@ final class CloudStore: ObservableObject {
         balance = nil
         instances = []
         sessions = []
+        rawSessions = []
         lastError = nil
         workspaceNotice = nil
     }
@@ -179,7 +196,42 @@ final class CloudStore: ObservableObject {
     /// or failing endpoint must never surface a dashboard error to users who never
     /// touch BYO.
     func refreshSessions() async {
-        sessions = (try? await client.listSessions()) ?? []
+        rawSessions = (try? await client.listSessions()) ?? []
+        sessions = aliased(rawSessions)
+    }
+
+    /// Overlay device-local aliases onto a freshly-fetched session list so every
+    /// `displayName` surface reflects a tunnel the user renamed on this device.
+    private func aliased(_ list: [CloudSession]) -> [CloudSession] {
+        guard !sessionAliasByID.isEmpty else { return list }
+        return list.map { session in
+            if let alias = sessionAliasByID[session.id], !alias.isEmpty {
+                return session.withName(alias)
+            }
+            return session
+        }
+    }
+
+    /// Rename a self-hosted (BYO) session for display on this device only. An
+    /// empty name clears the override, restoring the backend/default label. The
+    /// backend has no rename endpoint, so this alias never leaves the device.
+    func renameSession(_ id: String, to newName: String) {
+        let trimmed = String(newName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+        if trimmed.isEmpty {
+            sessionAliasByID.removeValue(forKey: id)
+        } else {
+            sessionAliasByID[id] = trimmed
+        }
+        UserDefaults.standard.set(sessionAliasByID, forKey: Self.sessionAliasMapKey)
+        sessions = aliased(rawSessions)
+        // Keep any persisted server config in sync so the connection footer and
+        // failure-screen title reflect the new name, not the label captured when
+        // the session was first connected.
+        if let serverIDString = serverIDByResource[id],
+           let serverID = UUID(uuidString: serverIDString),
+           let label = sessions.first(where: { $0.id == id })?.displayName {
+            korbo?.servers.rename(id: serverID, to: label)
+        }
     }
 
     // MARK: - Instance management
@@ -318,8 +370,10 @@ final class CloudStore: ObservableObject {
         // the cached status rather than blocking a connect on a transient API error.
         var current = session
         if let fresh = try? await client.getSession(session.id) {
-            current = fresh
-            sessions = sessions.map { $0.id == fresh.id ? fresh : $0 }
+            let aliasedFresh = aliased([fresh]).first ?? fresh
+            current = aliasedFresh
+            rawSessions = rawSessions.map { $0.id == fresh.id ? fresh : $0 }
+            sessions = aliased(rawSessions)
         }
         guard current.status.isOnline else {
             lastError = "“\(session.displayName)” is offline. Start it on your machine with the korbo CLI, then try again."

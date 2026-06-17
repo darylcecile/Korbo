@@ -12,6 +12,8 @@ struct InstancePickerView: View {
 
     @State private var query = ""
     @FocusState private var searchFocused: Bool
+    @State private var renameTarget: CloudSession?
+    @State private var renameText = ""
 
     private var filtered: [CloudInstance] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -56,6 +58,21 @@ struct InstancePickerView: View {
                 await cloud.refreshInstances()
                 await cloud.refreshSessions()
             }
+        }
+        .alert("Rename machine", isPresented: Binding(
+            get: { renameTarget != nil },
+            set: { if !$0 { renameTarget = nil } }
+        )) {
+            TextField("Name", text: $renameText)
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Save") {
+                if let target = renameTarget {
+                    cloud.renameSession(target.id, to: renameText)
+                }
+                renameTarget = nil
+            }
+        } message: {
+            Text("Shown only on this device.")
         }
     }
 
@@ -112,34 +129,57 @@ struct InstancePickerView: View {
         .padding(.bottom, 10)
     }
 
+    /// Promote "Your machines" above cloud instances once the user has at least
+    /// one reachable machine — their own hardware is the thing they reach for most
+    /// when it's online. Based on the full session set (not the search-filtered
+    /// one) so the section order doesn't jump around while typing.
+    private var machinesFirst: Bool {
+        cloud.sessions.contains { $0.status.isOnline }
+    }
+
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 2) {
-                if !filtered.isEmpty {
-                    if !filteredSessions.isEmpty {
-                        sectionHeader("Cloud instances")
-                    }
-                    ForEach(filtered) { instance in
-                        row(instance)
-                        if instance.id != filtered.last?.id {
-                            Divider().overlay(Theme.panelRaised.opacity(0.5))
-                                .padding(.leading, 44)
-                        }
-                    }
-                }
-                if !filteredSessions.isEmpty {
-                    sectionHeader("Your machines")
-                    ForEach(filteredSessions) { session in
-                        sessionRow(session)
-                        if session.id != filteredSessions.last?.id {
-                            Divider().overlay(Theme.panelRaised.opacity(0.5))
-                                .padding(.leading, 44)
-                        }
-                    }
+                if machinesFirst {
+                    machinesSection
+                    instancesSection
+                } else {
+                    instancesSection
+                    machinesSection
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private var instancesSection: some View {
+        if !filtered.isEmpty {
+            if !filteredSessions.isEmpty {
+                sectionHeader("Cloud instances")
+            }
+            ForEach(filtered) { instance in
+                row(instance)
+                if instance.id != filtered.last?.id {
+                    Divider().overlay(Theme.panelRaised.opacity(0.5))
+                        .padding(.leading, 44)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var machinesSection: some View {
+        if !filteredSessions.isEmpty {
+            sectionHeader("Your machines")
+            ForEach(filteredSessions) { session in
+                sessionRow(session)
+                if session.id != filteredSessions.last?.id {
+                    Divider().overlay(Theme.panelRaised.opacity(0.5))
+                        .padding(.leading, 44)
+                }
+            }
         }
     }
 
@@ -268,6 +308,14 @@ struct InstancePickerView: View {
         .accessibilityLabel(session.displayName)
         .accessibilityValue("Local machine, \(session.status.displayLabel)")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .contextMenu {
+            Button {
+                renameText = session.name ?? ""
+                renameTarget = session
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+        }
     }
 
     private var manageButton: some View {

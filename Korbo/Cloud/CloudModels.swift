@@ -349,6 +349,22 @@ extension CloudSession {
         if !trimmedRepo.isEmpty { return trimmedRepo }
         return "Session \(id.suffix(6))"
     }
+
+    /// A copy with `name` overridden. Used to overlay a device-local alias onto
+    /// the backend session so every `displayName` surface reflects a rename
+    /// without mutating the decoded model in place.
+    func withName(_ newName: String?) -> CloudSession {
+        CloudSession(
+            id: id,
+            name: newName,
+            repo: repo,
+            status: status,
+            proxyHost: proxyHost,
+            createdAt: createdAt,
+            lastHeartbeat: lastHeartbeat,
+            rawStatus: rawStatus
+        )
+    }
 }
 
 // MARK: - GitHub linkage
