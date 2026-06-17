@@ -10,6 +10,11 @@ struct ChatPane: View {
     @State private var showPhotoPicker = false
     @State private var showFileImporter = false
     @State private var isPinnedToBottom = true
+    /// The session id whose transcript we've already jumped to the bottom for.
+    /// Drives a one-time scroll-to-end when a session's backlog first appears, so
+    /// reopening an existing long session lands on the latest message instead of
+    /// stranded at the very top.
+    @State private var initialScrollDoneFor: String?
     @State private var isExpandedComposer = false
     @State private var isDropTargeted = false
     @FocusState private var composerFocused: Bool
@@ -20,6 +25,12 @@ struct ChatPane: View {
     private var isPhone: Bool {
         UIDevice.current.userInterfaceIdiom == .phone
     }
+
+    /// Shared reading width for the message column and the composer. Capping
+    /// both at the same value (and centering) keeps the input aligned with the
+    /// conversation instead of stretching edge-to-edge when the side panels are
+    /// collapsed and the chat has the full window to itself.
+    private let contentMaxWidth: CGFloat = 760
 
     /// Corner radius for the composer's glass container. On iPhone the bar is
     /// inset only ~16pt from the display edge, so a rounder corner sits roughly
@@ -43,6 +54,8 @@ struct ChatPane: View {
 
     // PencilKit sketch
     @State private var showScribbleSheet = false
+    // Image attachment currently being marked up (drives the markup sheet).
+    @State private var markupTarget: ComposerAttachment?
 
     // Voice dictation
     @ObservedObject private var speech = SpeechController.shared
@@ -62,6 +75,7 @@ struct ChatPane: View {
     @State private var activeSuggestion = 0
     @State private var mentionToken = ""
     @State private var fileSearchTask: Task<Void, Never>?
+    @State private var suggestionContentHeight: CGFloat = 0
 
     private var session: OCSession? { store.selectedSession }
 
@@ -91,13 +105,17 @@ struct ChatPane: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            if app.layoutMode.isCompact {
-                Button { app.toggleSessionsDrawer() } label: {
-                    Image(systemName: "sidebar.left")
+            Button {
+                if app.layoutMode.isCompact {
+                    app.toggleSessionsDrawer()
+                } else {
+                    app.toggleLeftSidebar()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Toggle sessions sidebar")
+            } label: {
+                Image(systemName: "sidebar.left")
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Toggle sessions sidebar")
 
             contextRing
 
@@ -518,7 +536,7 @@ struct ChatPane: View {
                                             value: g.frame(in: .named("chatScroll")).maxY)
                                     })
                             }
-                            .frame(maxWidth: 760)
+                            .frame(maxWidth: contentMaxWidth)
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, 24)
                             .padding(.vertical, 24)
@@ -536,8 +554,22 @@ struct ChatPane: View {
                             isPinnedToBottom = maxY <= outer.size.height + 80
                         }
                         .onChange(of: streamSignature) { _, _ in
+                            // A freshly-opened session: jump straight to the end
+                            // once before falling back to the pinned-scroll path.
+                            if scrollToBottomOnOpen(proxy) { return }
                             guard isPinnedToBottom else { return }
                             withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .onChange(of: store.selectedSessionID) { _, _ in
+                            // Re-arm the one-time scroll for the next session.
+                            initialScrollDoneFor = nil
+                        }
+                        .onAppear {
+                            // When the transcript appears with a backlog already
+                            // loaded (app relaunch, or switching to a cached
+                            // session) no streamSignature change fires, so do the
+                            // initial scroll-to-end here too.
+                            scrollToBottomOnOpen(proxy)
                         }
                         .onChange(of: searchScrollTick) { _, _ in
                             guard let target = currentMatchID else { return }
@@ -616,6 +648,24 @@ struct ChatPane: View {
         return "\(store.messages.count)-\(chars)-\(store.isGenerating)"
     }
 
+    /// Jump to the latest message the first time a session's backlog is shown.
+    ///
+    /// The live auto-scroll is gated on `isPinnedToBottom`, which is `false` for a
+    /// long conversation that loads scrolled to the top — so without this an
+    /// existing session reopens stranded at its very first message. Runs at most
+    /// once per session (tracked by `initialScrollDoneFor`); the async second pass
+    /// corrects any underscroll once the lazy rows above the sentinel are measured.
+    /// Returns whether it performed the initial scroll.
+    @discardableResult
+    private func scrollToBottomOnOpen(_ proxy: ScrollViewProxy) -> Bool {
+        guard initialScrollDoneFor != store.selectedSessionID, !store.messages.isEmpty else { return false }
+        initialScrollDoneFor = store.selectedSessionID
+        isPinnedToBottom = true
+        proxy.scrollTo("bottom", anchor: .bottom)
+        DispatchQueue.main.async { proxy.scrollTo("bottom", anchor: .bottom) }
+        return true
+    }
+
     private func centeredHint(icon: String, title: String, subtitle: String) -> some View {
         VStack(spacing: 10) {
             Image(systemName: icon).font(.system(size: 30)).foregroundStyle(Theme.textTertiary)
@@ -679,7 +729,29 @@ struct ChatPane: View {
                         if keyPress.modifiers.contains(.shift) {
                             return .ignored
                         }
+                        // When the suggestion palette is open, Enter accepts the highlighted item.
+                        if !suggestions.isEmpty {
+                            if suggestions.indices.contains(activeSuggestion) {
+                                select(suggestions[activeSuggestion])
+                            }
+                            return .handled
+                        }
                         if canSubmit { send() }
+                        return .handled
+                    }
+                    .onKeyPress(.upArrow) {
+                        guard !suggestions.isEmpty else { return .ignored }
+                        activeSuggestion = max(0, activeSuggestion - 1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        guard !suggestions.isEmpty else { return .ignored }
+                        activeSuggestion = min(suggestions.count - 1, activeSuggestion + 1)
+                        return .handled
+                    }
+                    .onKeyPress(.escape) {
+                        guard !suggestions.isEmpty else { return .ignored }
+                        clearSuggestions()
                         return .handled
                     }
                     .onChange(of: app.composerDraft) { _, text in
@@ -738,7 +810,10 @@ struct ChatPane: View {
                     reasoningMenu
                     if store.isGenerating {
                         Button { Task { await store.abort() } } label: {
-                            Image(systemName: "stop.fill").foregroundStyle(Theme.removed)
+                            Image(systemName: "stop.fill")
+                                .foregroundStyle(Theme.removed)
+                                .frame(width: 30, height: 30)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Stop generation")
@@ -746,6 +821,8 @@ struct ChatPane: View {
                         Button { send() } label: {
                             Image(systemName: "paperplane.fill")
                                 .foregroundStyle(canSubmit ? Theme.accent : Theme.textTertiary)
+                                .frame(width: 30, height: 30)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .disabled(!canSubmit)
@@ -769,6 +846,8 @@ struct ChatPane: View {
             .onDrop(of: [.image, .fileURL, .item], isTargeted: $isDropTargeted) { providers in
                 handleDrop(providers)
             }
+            .frame(maxWidth: contentMaxWidth)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .padding(.top, 8)
@@ -814,13 +893,21 @@ struct ChatPane: View {
                 attachSketch(image)
             }
         }
+        .sheet(item: $markupTarget) { target in
+            if let base = target.decodedImage {
+                ScribbleSheet(backgroundImage: base) { annotated in
+                    replaceWithMarkup(target, annotated: annotated)
+                }
+            }
+        }
     }
 
     private var attachmentStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
-                    AttachmentChip(attachment: attachment) {
+                    AttachmentChip(attachment: attachment,
+                                   onMarkup: attachment.isImage ? { markupTarget = attachment } : nil) {
                         attachments.removeAll { $0.id == attachment.id }
                     }
                 }
@@ -831,48 +918,66 @@ struct ChatPane: View {
     // MARK: Autocomplete
 
     private var suggestionList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, item in
-                Button {
-                    select(item)
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 13))
-                            .foregroundStyle(item.tint)
-                            .frame(width: 18)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.title)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Theme.textPrimary)
-                                .lineLimit(1)
-                            if let subtitle = item.subtitle, !subtitle.isEmpty {
-                                Text(subtitle)
-                                    .font(.system(size: 11))
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, item in
+                        Button {
+                            select(item)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(item.tint)
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.title)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Theme.textPrimary)
+                                        .lineLimit(1)
+                                    if let subtitle = item.subtitle, !subtitle.isEmpty {
+                                        Text(subtitle)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Theme.textTertiary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 4)
+                                Text(item.kindLabel)
+                                    .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(Theme.textTertiary)
-                                    .lineLimit(1)
                             }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(index == activeSuggestion ? Theme.panel : .clear)
+                            )
+                            .contentShape(Rectangle())
                         }
-                        Spacer(minLength: 4)
-                        Text(item.kindLabel)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.textTertiary)
+                        .buttonStyle(.plain)
+                        .id(index)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(index == activeSuggestion ? Theme.panel : .clear)
-                    )
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .padding(6)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: SuggestionHeightKey.self, value: geo.size.height)
+                    }
+                )
             }
+            .frame(height: min(suggestionContentHeight, 240))
+            .scrollBounceBehavior(.basedOnSize)
+            .onPreferenceChange(SuggestionHeightKey.self) { suggestionContentHeight = $0 }
+            .onChange(of: activeSuggestion) { _, index in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    proxy.scrollTo(index, anchor: .center)
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bg))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bg))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
-        .frame(maxHeight: 240)
     }
 
     private func clearSuggestions() {
@@ -1122,6 +1227,16 @@ struct ChatPane: View {
         attachments.append(ComposerAttachment(filename: filename, mime: "image/jpeg", dataURL: dataURL))
     }
 
+    /// Replace an existing image attachment with its marked-up version, in place.
+    private func replaceWithMarkup(_ original: ComposerAttachment, annotated: UIImage) {
+        guard let jpeg = annotated.jpegData(compressionQuality: 0.85),
+              let index = attachments.firstIndex(where: { $0.id == original.id }) else { return }
+        let dataURL = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
+        let base = (original.filename as NSString).deletingPathExtension
+        let name = base.hasSuffix("-markup") ? original.filename : "\(base)-markup.jpg"
+        attachments[index] = ComposerAttachment(filename: name, mime: "image/jpeg", dataURL: dataURL)
+    }
+
     // MARK: Dictation
 
     private func toggleDictation() {
@@ -1136,15 +1251,10 @@ struct ChatPane: View {
 /// A removable chip for a staged composer attachment (image thumbnail or file icon).
 private struct AttachmentChip: View {
     let attachment: ComposerAttachment
+    var onMarkup: (() -> Void)?
     let onRemove: () -> Void
 
-    private var thumbnail: UIImage? {
-        guard attachment.mime.hasPrefix("image/"),
-              let comma = attachment.dataURL.firstIndex(of: ","),
-              let data = Data(base64Encoded: String(attachment.dataURL[attachment.dataURL.index(after: comma)...]))
-        else { return nil }
-        return UIImage(data: data)
-    }
+    private var thumbnail: UIImage? { attachment.decodedImage }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1163,6 +1273,15 @@ private struct AttachmentChip: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
+            if let onMarkup, attachment.isImage {
+                Button(action: onMarkup) {
+                    Image(systemName: "pencil.tip.crop.circle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Mark up \(attachment.filename)")
+            }
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))
@@ -1177,12 +1296,35 @@ private struct AttachmentChip: View {
     }
 }
 
+extension ComposerAttachment {
+    var isImage: Bool { mime.hasPrefix("image/") }
+
+    /// Decode the base64 data URL back into a `UIImage` (image attachments only).
+    var decodedImage: UIImage? {
+        guard isImage,
+              let comma = dataURL.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
+        else { return nil }
+        return UIImage(data: data)
+    }
+}
+
 /// Preference key reporting the bottom sentinel's position so the chat can tell
 /// whether the user is scrolled to the bottom.
 private struct BottomOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+/// Preference key reporting the natural height of the autocomplete list so the
+/// scroll container can size itself to its content (capped), instead of letting
+/// a tall list overflow unclipped over the chat.
+private struct SuggestionHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

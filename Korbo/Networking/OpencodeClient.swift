@@ -43,6 +43,19 @@ actor OpencodeClient {
     /// still fails fast. (Harmless once the backend serves the workspace from local
     /// disk: fast responses return well under the ceiling.)
     private let diffSession: URLSession
+    /// Dedicated transport for the long-lived `/global/event` SSE stream. Its
+    /// `timeoutIntervalForRequest` is an *idle* timeout — reset every time a byte
+    /// arrives — so a healthily streaming connection never trips it, but a
+    /// silently-stalled one (no bytes, no FIN, no error: common over a tunnel or
+    /// cellular) throws `NSURLErrorTimedOut` after the interval instead of hanging
+    /// `bytes.lines` forever. That error surfaces to `KorboStore.startEventStream`
+    /// and drives its reconnect-with-backoff loop, so dead streams self-heal.
+    /// (Empirically verified: with the request's own `timeoutInterval` left at its
+    /// default, this config value governs and is per-byte-reset, surviving gaps far
+    /// longer than itself in aggregate yet firing after one silent gap that
+    /// exceeds it.) The previous `request.timeoutInterval = .infinity` disabled
+    /// this entirely, which is why stalled runs looked permanently "stuck loading".
+    private let eventSession: URLSession
     private let decoder: JSONDecoder
 
     init(config: ServerConfig, directory: String? = nil, session: URLSession? = nil) {
@@ -51,6 +64,7 @@ actor OpencodeClient {
         if let session {
             self.session = session
             self.diffSession = session
+            self.eventSession = session
         } else {
             let cfg = URLSessionConfiguration.default
             cfg.timeoutIntervalForRequest = 20
@@ -61,6 +75,16 @@ actor OpencodeClient {
             diffCfg.timeoutIntervalForRequest = 120
             diffCfg.waitsForConnectivity = false
             self.diffSession = URLSession(configuration: diffCfg)
+
+            // Idle timeout for the event stream. Generous enough that a legitimately
+            // quiet stretch (e.g. a long, silent tool call) rarely trips it, short
+            // enough that a genuinely dead connection is detected and reconnected
+            // within ~a minute. Reconnects are non-destructive (the store reconciles
+            // missed state from REST), so an occasional false positive is harmless.
+            let eventCfg = URLSessionConfiguration.default
+            eventCfg.timeoutIntervalForRequest = 45
+            eventCfg.waitsForConnectivity = false
+            self.eventSession = URLSession(configuration: eventCfg)
         }
         self.decoder = JSONDecoder()
     }
@@ -82,6 +106,13 @@ actor OpencodeClient {
     /// highlight the right entry before the user has switched explicitly).
     func currentProject() async throws -> OCProject {
         try await getJSON("/project/current")
+    }
+
+    /// `GET /path` — the server's resolved paths. `directory` is the real
+    /// working directory opencode stores sessions against; we scope to it when
+    /// no project is explicitly selected (see `OCPath`).
+    func getPath() async throws -> OCPath {
+        try await getJSON("/path")
     }
 
     /// `GET /session` — list sessions for the connected instance.
@@ -375,11 +406,13 @@ actor OpencodeClient {
                 do {
                     guard let url = makeURL("/global/event") else { throw OpencodeError.invalidURL }
                     var request = URLRequest(url: url)
-                    request.timeoutInterval = .infinity
+                    // Leave `request.timeoutInterval` at its default so `eventSession`'s
+                    // idle timeout governs (see its declaration). Do NOT set `.infinity`
+                    // here — that disables stall detection and hangs forever.
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     for (k, v) in config.authHeaders() { request.setValue(v, forHTTPHeaderField: k) }
 
-                    let (bytes, response) = try await session.bytes(for: request)
+                    let (bytes, response) = try await eventSession.bytes(for: request)
                     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                         throw OpencodeError.http(status: http.statusCode, body: "")
                     }

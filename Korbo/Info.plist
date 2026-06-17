@@ -4,7 +4,7 @@
 <dict>
 	<key>NSUserActivityTypes</key>
 	<array>
-		<string>ai.korbo.Korbo.session</string>
+		<string>app.korbo.ios.session</string>
 	</array>
 </dict>
 </plist>

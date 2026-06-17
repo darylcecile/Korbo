@@ -587,8 +587,31 @@ struct SessionsSidebar: View {
     private var footer: some View {
         HStack(spacing: 18) {
             Menu {
+                // Online self-hosted (BYO) sessions registered via `korbo up`. The
+                // primary cloud switcher (`instanceBar`) only appears once already
+                // connected to a cloud resource, so without this there's no way to
+                // reach a freshly-registered BYO session from a plain local server.
+                let onlineSessions = cloud.sessions.filter { $0.status.isOnline }
+                if cloud.isSignedIn, !onlineSessions.isEmpty {
+                    Section("Tunnels") {
+                        ForEach(onlineSessions) { session in
+                            Button {
+                                Task { await cloud.connectToSession(session) }
+                            } label: {
+                                if session.id == cloud.connectedSession?.id {
+                                    Label(session.displayName, systemImage: "checkmark")
+                                } else {
+                                    Label(session.displayName, systemImage: "desktopcomputer")
+                                }
+                            }
+                        }
+                    }
+                }
                 Section("Server") {
-                    ForEach(store.servers.servers) { server in
+                    // Hide saved configs that back an online BYO session: those are
+                    // already shown above with live status, so listing them here too
+                    // would be a confusing duplicate.
+                    ForEach(store.servers.servers.filter { !cloud.onlineSessionServerIDs.contains($0.id.uuidString) }) { server in
                         Button {
                             Task { await store.switchServer(to: server.id) }
                         } label: {
@@ -601,6 +624,11 @@ struct SessionsSidebar: View {
                     }
                 }
                 Divider()
+                if cloud.isSignedIn {
+                    Button { app.showCloudSheet = true } label: {
+                        Label("Manage Korbo Cloud…", systemImage: "cloud")
+                    }
+                }
                 Button { app.showConnectionSheet = true } label: {
                     Label("Manage servers…", systemImage: "server.rack")
                 }

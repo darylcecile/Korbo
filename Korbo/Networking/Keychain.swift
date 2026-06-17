@@ -5,7 +5,7 @@ import Security
 /// bearer token). Secrets are keyed by the server's UUID and never written to
 /// `UserDefaults` or logs.
 enum Keychain {
-    private static let service = "ai.korbo.server-secret"
+    private static let service = "app.korbo.server-secret"
 
     @discardableResult
     static func set(_ value: String?, for id: UUID) -> Bool {

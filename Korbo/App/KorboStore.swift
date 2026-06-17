@@ -151,6 +151,12 @@ final class KorboStore: ObservableObject {
 
     private var client: OpencodeClient?
     private var eventTask: Task<Void, Never>?
+    /// Backstop that reconciles in-flight sessions from REST when the event stream
+    /// goes silent (see `startWatchdog`).
+    private var watchdogTask: Task<Void, Never>?
+    /// Wall-clock time of the most recent event-stream frame. The watchdog compares
+    /// against this to spot a silently-stalled stream.
+    private var lastEventAt = Date()
     private var fileSearchTask: Task<Void, Never>?
     private var fileReloadTask: Task<Void, Never>?
     /// Serializes connection operations (`connect`/`switchProject`). Because
@@ -189,13 +195,34 @@ final class KorboStore: ObservableObject {
         status = .connecting
         lastError = nil
 
-        let restored = restoreSelectedProject(for: server.id)
+        let restored = restoredProjectDirectory(for: server)
         selectedProjectDirectory = restored
         // Keep the spinner up on the first attempt only when a default-project
         // fallback is still available, so a recoverable saved-directory failure
         // doesn't flash a terminal error before we retry.
         if await establish(server: server, directory: restored,
                            keepConnectingOnFailure: restored != nil) {
+            // The connection is healthy, but a persisted project can outlive the
+            // sessions it scoped to — e.g. a managed server stopped hosting that
+            // sandbox. opencode answers `GET /session?directory=<stale>` with an
+            // empty list (HTTP 200, not an error), which would strand the user on
+            // a blank sidebar that no refresh can fix. Detect that — connected,
+            // but the saved project yields nothing — and fall back to the server
+            // default (its current project), forgetting the stale selection so it
+            // self-heals. (BYO tunnels never reach here: `restoredProjectDirectory`
+            // returns nil for them, so `establish` resolves their working directory
+            // from `GET /path` rather than a remembered value.)
+            if restored != nil, sessions.isEmpty {
+                selectedProjectDirectory = nil
+                if await establish(server: server, directory: nil), !sessions.isEmpty {
+                    persistSelectedProject(nil, for: server.id)
+                    return
+                }
+                // The default is empty too: a genuinely empty server, not a stale
+                // selection. Restore the user's choice and reconnect to it.
+                selectedProjectDirectory = restored
+                await establish(server: server, directory: restored)
+            }
             return
         }
         // A persisted project directory can become invalid (the server stopped
@@ -224,7 +251,7 @@ final class KorboStore: ObservableObject {
     private func establish(server: ServerConfig, directory: String?,
                            keepConnectingOnFailure: Bool = false) async -> Bool {
         await teardown()
-        let client = OpencodeClient(config: server, directory: directory)
+        var client = OpencodeClient(config: server, directory: directory)
         self.client = client
 
         do {
@@ -232,6 +259,24 @@ final class KorboStore: ObservableObject {
             guard ok else {
                 if !keepConnectingOnFailure { status = .failed("Server health check failed") }
                 return false
+            }
+            // With no explicit project selected, scope to the server's *actual*
+            // working directory instead of leaving requests unscoped. opencode
+            // stores every session against the exact cwd it was started in; when
+            // that cwd isn't a git worktree (e.g. a BYO tunnel launched in $HOME),
+            // `GET /project/current` reports a synthetic root project (worktree
+            // "/") whose `?directory=/` matches no sessions — so the sidebar comes
+            // up empty on relaunch even though the sessions exist. `GET /path`
+            // reports the real `directory`, which is both where sessions live and
+            // where we create new ones, keeping list and create consistent. Older
+            // servers without `/path`, or a degenerate "/" cwd, fall through to the
+            // previous unscoped behaviour.
+            if directory == nil,
+               let resolved = try? await client.getPath().directory,
+               !resolved.isEmpty, resolved != "/" {
+                client = OpencodeClient(config: server, directory: resolved)
+                self.client = client
+                selectedProjectDirectory = resolved
             }
             status = .connected
             await loadProjects()
@@ -256,6 +301,8 @@ final class KorboStore: ObservableObject {
     private func teardown() async {
         eventTask?.cancel()
         eventTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
         fileSearchTask?.cancel()
         fileSearchTask = nil
         activeSessionIDs.removeAll()
@@ -388,6 +435,17 @@ final class KorboStore: ObservableObject {
         guard let serverID else { return nil }
         let map = UserDefaults.standard.dictionary(forKey: Self.selectedProjectKey) as? [String: String] ?? [:]
         return map[serverID.uuidString]
+    }
+
+    /// The project directory to scope the initial connection to. BYO tunnels
+    /// opt out of the remembered-directory mechanism entirely (their working
+    /// directory is decided server-side at `korbo up` time and a stale saved
+    /// value scopes `GET /session` to an empty list); for them we return nil so
+    /// `establish` resolves the server's live working directory from `GET /path`.
+    /// Everyone else restores their saved selection as before.
+    private func restoredProjectDirectory(for server: ServerConfig) -> String? {
+        if server.usesServerDefaultProject == true { return nil }
+        return restoreSelectedProject(for: server.id)
     }
 
     private func persistSelectedProject(_ directory: String?, for serverID: UUID?) {
@@ -1525,25 +1583,94 @@ final class KorboStore: ObservableObject {
     private func startEventStream() {
         guard let client else { return }
         eventTask?.cancel()
+        lastEventAt = Date()
         eventTask = Task { [weak self] in
             var backoff: UInt64 = 1
+            var reconnecting = false
             while !Task.isCancelled {
+                // After a drop/stall, reconcile in-flight sessions from REST before
+                // resubscribing: `/global/event` is live-only (no replay), so any
+                // frames sent while we were disconnected — including the terminal
+                // `session.idle` — are gone and would otherwise leave the UI stuck.
+                if reconnecting, let self { await self.reconcileActiveSessions() }
                 do {
                     for try await event in client.events() {
                         self?.handle(event)
                         backoff = 1
                     }
                 } catch {
-                    // stream dropped; fall through to reconnect with backoff
+                    // stream dropped (including the idle-timeout firing on a stalled
+                    // connection); fall through to reconnect with backoff
                 }
                 if Task.isCancelled { break }
+                reconnecting = true
                 try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
                 backoff = min(backoff * 2, 30)
             }
         }
+        startWatchdog()
+    }
+
+    /// Guards against a silently-stalled event stream. While a run is active, if no
+    /// frame has arrived for `stallThreshold` seconds, it reconciles the active
+    /// session(s) from REST so the response — and the fact that the run finished —
+    /// surfaces even when live frames stopped flowing (the bug where a run looked
+    /// "stuck loading" until the user hit Stop). Dormant and effectively free
+    /// whenever the stream is healthy or nothing is running.
+    private func startWatchdog() {
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            let stallThreshold: TimeInterval = 12
+            let minReconcileGap: TimeInterval = 10
+            var lastReconcile = Date.distantPast
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                guard !self.activeSessionIDs.isEmpty else { continue }
+                let now = Date()
+                if now.timeIntervalSince(self.lastEventAt) >= stallThreshold,
+                   now.timeIntervalSince(lastReconcile) >= minReconcileGap {
+                    lastReconcile = now
+                    await self.reconcileActiveSessions()
+                }
+            }
+        }
+    }
+
+    /// Re-fetch messages for every active session and resolve any whose run has
+    /// actually finished, so a missed `session.idle`/error event can't leave the UI
+    /// stuck "loading". Only the on-screen session's transcript is updated.
+    private func reconcileActiveSessions() async {
+        guard client != nil else { return }
+        for sid in activeSessionIDs {
+            await reconcileSession(sid)
+        }
+    }
+
+    private func reconcileSession(_ sessionID: String) async {
+        guard let client else { return }
+        let items: [OCMessageItem]
+        do {
+            items = try await client.listMessages(sessionID: sessionID)
+        } catch {
+            return  // transient REST failure; the watchdog will retry on its next tick
+        }
+        // Refresh the visible transcript only when this is the selected session.
+        if sessionID == selectedSessionID {
+            messages = items
+        }
+        // If the latest message is a finished assistant turn, the run is over —
+        // clear the active/loading state even though we never saw the terminal event.
+        guard let last = items.last, last.info.role == .assistant else { return }
+        if last.info.error != nil {
+            markFailed(sessionID)
+        } else if last.info.completedAt != nil {
+            markIdle(sessionID)
+        }
     }
 
     private func handle(_ event: OCEvent) {
+        lastEventAt = Date()
         guard let type = OCEventType(rawValue: event.type) else { return }
         let props = event.properties
         switch type {
@@ -1615,17 +1742,7 @@ final class KorboStore: ObservableObject {
             let rid = props["requestID"]?.stringValue ?? props["id"]?.stringValue
             if let rid { pendingQuestions.removeAll { $0.id == rid } }
         case .sessionError:
-            if let sid = props["sessionID"]?.stringValue {
-                let wasActive = activeSessionIDs.contains(sid)
-                activeSessionIDs.remove(sid)
-                if wasActive {
-                    NotificationManager.shared.notify(
-                        title: "Run failed",
-                        body: "\(sessionTitle(sid)) ran into an error")
-                }
-                LiveActivityController.shared.end(status: "Failed")
-                if activeSessionIDs.isEmpty { NotificationManager.shared.endBackgroundGrace() }
-            }
+            if let sid = props["sessionID"]?.stringValue { markFailed(sid) }
         case .serverConnected:
             break // handled in later milestones
         case .fileEdited:
@@ -1656,6 +1773,21 @@ final class KorboStore: ObservableObject {
         if sessionID == selectedSessionID {
             Task { [weak self] in await self?.loadMessages(sessionID: sessionID) }
         }
+    }
+
+    /// Mark a session's run as failed and clear its active/loading state. Mirrors
+    /// the `.sessionError` event so the watchdog can resolve a stuck run when the
+    /// error frame itself was missed.
+    private func markFailed(_ sessionID: String) {
+        let wasActive = activeSessionIDs.contains(sessionID)
+        activeSessionIDs.remove(sessionID)
+        if wasActive {
+            NotificationManager.shared.notify(
+                title: "Run failed",
+                body: "\(sessionTitle(sessionID)) ran into an error")
+        }
+        LiveActivityController.shared.end(status: "Failed")
+        if activeSessionIDs.isEmpty { NotificationManager.shared.endBackgroundGrace() }
     }
 
     /// A session just started (or is continuing) a run. Tracks it as active and,

@@ -130,6 +130,21 @@ struct OCProject: Codable, Identifiable, Hashable {
     }
 }
 
+/// `GET /path` — the server's resolved working paths. `directory` is the
+/// *actual* working directory opencode was started in and stores sessions
+/// against. It can differ from the project `worktree`: when the cwd isn't a
+/// git repo (e.g. a BYO tunnel launched in `$HOME`), opencode reports a
+/// synthetic root project (`worktree: "/"`) while `directory` stays the real
+/// path. Scoping `?directory=` to `worktree` there matches no sessions, so we
+/// scope to `directory` instead.
+struct OCPath: Codable, Hashable {
+    var directory: String
+    var worktree: String?
+    var home: String?
+    var state: String?
+    var config: String?
+}
+
 
 // MARK: - Messages & parts
 

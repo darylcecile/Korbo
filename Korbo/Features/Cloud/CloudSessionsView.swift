@@ -116,6 +116,8 @@ private struct SessionRow: View {
 
     let session: CloudSession
     let onRemove: () -> Void
+    @State private var showRename = false
+    @State private var renameText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -142,9 +144,22 @@ private struct SessionRow: View {
             RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.border, lineWidth: 1)
         )
         .contextMenu {
+            Button {
+                renameText = session.name ?? ""
+                showRename = true
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
             Button(role: .destructive, action: onRemove) {
                 Label("Remove", systemImage: "trash")
             }
+        }
+        .alert("Rename machine", isPresented: $showRename) {
+            TextField("Name", text: $renameText)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") { cloud.renameSession(session.id, to: renameText) }
+        } message: {
+            Text("Shown only on this device.")
         }
     }
 

@@ -453,6 +453,16 @@ struct SettingsView: View {
             if let url = store.servers.selectedServer?.normalizedURLString {
                 LabeledContent("Server", value: url)
             }
+            Button {
+                // Dismiss Settings first so the onboarding cover isn't presented
+                // on top of this sheet.
+                dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    app.replayOnboarding()
+                }
+            } label: {
+                Label("Show welcome screen", systemImage: "sparkles")
+            }
         }
     }
 

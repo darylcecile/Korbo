@@ -17,12 +17,17 @@ struct KorboApp: App {
                 .task {
                     // Attempt to connect to the selected server on launch. If no
                     // credentials are stored yet this surfaces a failed state and
-                    // the user can open the connection sheet.
-                    NotificationManager.shared.requestAuthorizationIfNeeded()
+                    // the user can open the connection sheet. Both the connect and
+                    // the notification prompt are skipped while first-run onboarding
+                    // is up, so the welcome flow isn't interrupted by a system
+                    // permission dialog or a spurious failed-connection banner.
+                    if !appModel.showOnboarding {
+                        NotificationManager.shared.requestAuthorizationIfNeeded()
+                    }
                     LiveActivityController.shared.endStaleOnLaunch()
                     cloud.attach(korbo: store)
                     await cloud.bootstrap()
-                    if store.servers.selectedServer != nil {
+                    if !appModel.showOnboarding, store.servers.selectedServer != nil {
                         await store.connect()
                     }
                 }
@@ -31,7 +36,15 @@ struct KorboApp: App {
                     Task { await handleIntent(pending) }
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { store.reconcileLiveActivitiesOnForeground() }
+                    if phase == .active {
+                        store.reconcileLiveActivitiesOnForeground()
+                        // A self-hosted session started via `korbo up` while the app
+                        // was backgrounded won't surface until we re-list, so refresh
+                        // on foreground to keep the cloud switcher current.
+                        if cloud.isSignedIn {
+                            Task { await cloud.refreshSessions() }
+                        }
+                    }
                 }
         }
 

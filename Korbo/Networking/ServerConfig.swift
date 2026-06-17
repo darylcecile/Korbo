@@ -28,6 +28,16 @@ struct ServerConfig: Codable, Hashable, Identifiable {
     var username: String = ""
     var extraHeaders: [String: String] = [:]
 
+    /// When set, Korbo never restores a remembered project `directory` for this
+    /// server — it always scopes to whatever project the server is currently
+    /// serving. Set for BYO tunnels (`korbo up`), whose working directory is
+    /// chosen server-side at launch and can change between runs, so it can't be
+    /// known — or meaningfully remembered — by the app ahead of time. A stale
+    /// remembered directory would scope `GET /session` to an empty list and
+    /// strand the user on "No sessions yet" after a relaunch. Optional so configs
+    /// persisted by older builds (which lack the key) still decode.
+    var usesServerDefaultProject: Bool? = nil
+
     var baseURL: URL? { URL(string: normalizedURLString) }
 
     /// Adds a scheme if the user omitted one (defaults to https for remote hosts,
@@ -129,6 +139,17 @@ final class ServerStore: ObservableObject {
         Keychain.delete(config.id)
         servers.removeAll { $0.id == config.id }
         if selectedServerID == config.id { selectedServerID = servers.first?.id }
+        persist()
+    }
+
+    /// Update a saved server's display label in place — without changing the
+    /// current selection or its Keychain secret. Used when a cloud/tunnel session
+    /// is renamed so its persisted server config (shown in the connection footer
+    /// and failure screen) stays in sync with the new name.
+    func rename(id: UUID, to name: String) {
+        guard let idx = servers.firstIndex(where: { $0.id == id }),
+              servers[idx].name != name else { return }
+        servers[idx].name = name
         persist()
     }
 

@@ -4,12 +4,46 @@ import SwiftUI
 /// this as the app is built out per the PRD.
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var showRightSidebar = true
+    @Published var showLeftSidebar = true
+    @Published var showRightSidebar = false
     @Published var rightTab: RightTab = .git
     @Published var showConnectionSheet = false
+    @Published var showInstancePicker = false
     @Published var showSettingsSheet = false
     /// Korbo Cloud management sheet (sign-in + provisioned instances).
     @Published var showCloudSheet = false
+
+    // MARK: First-run onboarding
+
+    private static let onboardingCompletedKey = "korbo.onboarding.completed.v1"
+
+    /// Drives the first-run onboarding cover (a short paged intro ending on a
+    /// connect step). Persisted, so it only shows until the user finishes or
+    /// skips it; re-showable from Settings via `replayOnboarding()`.
+    @Published var showOnboarding: Bool = !UserDefaults.standard.bool(forKey: AppModel.onboardingCompletedKey)
+
+    /// Where opencode should run, chosen on the final onboarding page.
+    enum OnboardingConnectChoice { case cloud, selfHosted }
+
+    /// Finish onboarding: persist completion, dismiss the cover, and optionally
+    /// open the matching connect sheet. The short delay lets the full-screen
+    /// cover finish dismissing before a sheet is presented (avoids a
+    /// modal-over-modal race that can swallow the presentation).
+    func finishOnboarding(opening choice: OnboardingConnectChoice?) {
+        UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+        showOnboarding = false
+        guard let choice else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            switch choice {
+            case .cloud:      self?.showCloudSheet = true
+            case .selfHosted: self?.showConnectionSheet = true
+            }
+        }
+    }
+
+    /// Re-show onboarding (e.g. from Settings) without clearing the completed
+    /// flag until the user finishes it again.
+    func replayOnboarding() { showOnboarding = true }
 
     /// Which view occupies the wide center column. The terminal and file viewer
     /// both live in the centre pane (toggled from toolbar/actions) so they get
@@ -150,6 +184,7 @@ final class AppModel: ObservableObject {
     func showChat() { centerPane = .chat }
     func focusComposer() { focusComposerToken &+= 1 }
     func toggleSessionsDrawer() { sessionsDrawerOpen.toggle() }
+    func toggleLeftSidebar() { showLeftSidebar.toggle() }
 
     /// Apply a new width-derived layout mode, auto-collapsing side panels as the
     /// window narrows and restoring the context panel when it widens back out.
