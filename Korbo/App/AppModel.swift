@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     @Published var showLeftSidebar = true
-    @Published var showRightSidebar = true
+    @Published var showRightSidebar = false
     @Published var rightTab: RightTab = .git
     @Published var showConnectionSheet = false
     @Published var showInstancePicker = false

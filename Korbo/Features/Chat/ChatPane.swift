@@ -75,6 +75,7 @@ struct ChatPane: View {
     @State private var activeSuggestion = 0
     @State private var mentionToken = ""
     @State private var fileSearchTask: Task<Void, Never>?
+    @State private var suggestionContentHeight: CGFloat = 0
 
     private var session: OCSession? { store.selectedSession }
 
@@ -728,7 +729,29 @@ struct ChatPane: View {
                         if keyPress.modifiers.contains(.shift) {
                             return .ignored
                         }
+                        // When the suggestion palette is open, Enter accepts the highlighted item.
+                        if !suggestions.isEmpty {
+                            if suggestions.indices.contains(activeSuggestion) {
+                                select(suggestions[activeSuggestion])
+                            }
+                            return .handled
+                        }
                         if canSubmit { send() }
+                        return .handled
+                    }
+                    .onKeyPress(.upArrow) {
+                        guard !suggestions.isEmpty else { return .ignored }
+                        activeSuggestion = max(0, activeSuggestion - 1)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        guard !suggestions.isEmpty else { return .ignored }
+                        activeSuggestion = min(suggestions.count - 1, activeSuggestion + 1)
+                        return .handled
+                    }
+                    .onKeyPress(.escape) {
+                        guard !suggestions.isEmpty else { return .ignored }
+                        clearSuggestions()
                         return .handled
                     }
                     .onChange(of: app.composerDraft) { _, text in
@@ -895,48 +918,66 @@ struct ChatPane: View {
     // MARK: Autocomplete
 
     private var suggestionList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, item in
-                Button {
-                    select(item)
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 13))
-                            .foregroundStyle(item.tint)
-                            .frame(width: 18)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.title)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Theme.textPrimary)
-                                .lineLimit(1)
-                            if let subtitle = item.subtitle, !subtitle.isEmpty {
-                                Text(subtitle)
-                                    .font(.system(size: 11))
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, item in
+                        Button {
+                            select(item)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(item.tint)
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.title)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Theme.textPrimary)
+                                        .lineLimit(1)
+                                    if let subtitle = item.subtitle, !subtitle.isEmpty {
+                                        Text(subtitle)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Theme.textTertiary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 4)
+                                Text(item.kindLabel)
+                                    .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(Theme.textTertiary)
-                                    .lineLimit(1)
                             }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(index == activeSuggestion ? Theme.panel : .clear)
+                            )
+                            .contentShape(Rectangle())
                         }
-                        Spacer(minLength: 4)
-                        Text(item.kindLabel)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.textTertiary)
+                        .buttonStyle(.plain)
+                        .id(index)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(index == activeSuggestion ? Theme.panel : .clear)
-                    )
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .padding(6)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: SuggestionHeightKey.self, value: geo.size.height)
+                    }
+                )
             }
+            .frame(height: min(suggestionContentHeight, 240))
+            .scrollBounceBehavior(.basedOnSize)
+            .onPreferenceChange(SuggestionHeightKey.self) { suggestionContentHeight = $0 }
+            .onChange(of: activeSuggestion) { _, index in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    proxy.scrollTo(index, anchor: .center)
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bg))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bg))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
-        .frame(maxHeight: 240)
     }
 
     private func clearSuggestions() {
@@ -1274,6 +1315,16 @@ private struct BottomOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+/// Preference key reporting the natural height of the autocomplete list so the
+/// scroll container can size itself to its content (capped), instead of letting
+/// a tall list overflow unclipped over the chat.
+private struct SuggestionHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
