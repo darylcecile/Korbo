@@ -26,6 +26,12 @@ struct ChatPane: View {
         UIDevice.current.userInterfaceIdiom == .phone
     }
 
+    /// Shared reading width for the message column and the composer. Capping
+    /// both at the same value (and centering) keeps the input aligned with the
+    /// conversation instead of stretching edge-to-edge when the side panels are
+    /// collapsed and the chat has the full window to itself.
+    private let contentMaxWidth: CGFloat = 760
+
     /// Corner radius for the composer's glass container. On iPhone the bar is
     /// inset only ~16pt from the display edge, so a rounder corner sits roughly
     /// concentric with the device's own (much rounder) screen corners; on iPad
@@ -529,7 +535,7 @@ struct ChatPane: View {
                                             value: g.frame(in: .named("chatScroll")).maxY)
                                     })
                             }
-                            .frame(maxWidth: 760)
+                            .frame(maxWidth: contentMaxWidth)
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, 24)
                             .padding(.vertical, 24)
@@ -817,6 +823,8 @@ struct ChatPane: View {
             .onDrop(of: [.image, .fileURL, .item], isTargeted: $isDropTargeted) { providers in
                 handleDrop(providers)
             }
+            .frame(maxWidth: contentMaxWidth)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .padding(.top, 8)
